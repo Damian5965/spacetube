@@ -33,7 +33,7 @@ const touchDevice = isTouch();
 
 const held = { left: false, right: false, up: false, down: false, fire: false, boost: false };
 const mouse = { fire: false, boost: false };
-const touch = { fire: false, boost: false, stickX: 0, stickY: 0 };
+const touch = { fire: false, boost: false, leap: false, stickX: 0, stickY: 0 };
 let muted = false;
 let bootDone = false;
 let game = null;
@@ -42,7 +42,7 @@ function syncInput() {
   if (!game) return;
   game.input.left = held.left;
   game.input.right = held.right;
-  game.input.up = held.up;
+  game.input.up = held.up || touch.leap;
   game.input.down = held.down;
   game.input.fire = held.fire || mouse.fire || touch.fire;
   game.input.boost = held.boost || mouse.boost || touch.boost;
@@ -56,6 +56,7 @@ function clearInput() {
   mouse.boost = false;
   touch.fire = false;
   touch.boost = false;
+  touch.leap = false;
   touch.stickX = 0;
   touch.stickY = 0;
   document.querySelectorAll('.touch-btn.on').forEach((b) => b.classList.remove('on'));
@@ -373,6 +374,7 @@ function setupTouch() {
   const stick = document.getElementById('stick');
   const nub = document.getElementById('stick-nub');
   const boostBtn = document.getElementById('touch-boost');
+  const leapBtn = document.getElementById('touch-leap');
   const fireBtn = document.getElementById('touch-fire');
   if (!stick) return;
   let activeId = null;
@@ -431,6 +433,7 @@ function setupTouch() {
     el.addEventListener('pointercancel', off);
     el.addEventListener('pointerleave', off);
   };
+  bindButton(leapBtn, 'leap');
   bindButton(boostBtn, 'boost');
   bindButton(fireBtn, 'fire');
 }

@@ -1,21 +1,39 @@
-// Game director: run state, spawning, combat, scoring, camera and sectors.
+// Game director for the mag-boot runner.
+// The hero sticks to the inside wall of the tube and can run all the way
+// around it (a full 360°), so gameplay lives on a cylinder: one axis runs
+// along the tunnel, the other is the angle around its circumference.
 import * as THREE from 'three';
-import { PLAY_X, PLAY_Y, sectorFor, pathX, pathY } from './path.js';
+import {
+  TUBE_RADIUS,
+  RUNNER_CENTER_R,
+  BODY_HALF_ANGLE,
+  sectorFor,
+  pathX,
+  pathY,
+  angleDelta,
+} from './path.js';
 import { Tunnel } from './tunnel.js';
 import { Backdrop } from './backdrop.js';
 import { FX } from './fx.js';
 import { Bullets } from './projectiles.js';
-import { Ship } from './ship.js';
-import { Barrier, Asteroid, Drone, Mine, Pickup, Gate, PICKUP_INFO } from './hazards.js';
+import { Runner } from './runner.js';
+import { ArcBarrier, Asteroid, Drone, Mine, Pickup, Gate, PICKUP_INFO } from './hazards.js';
 import { Warden } from './boss.js';
-import { clamp, damp, rand, randInt, pick, chance, TAU } from './util.js';
+import { clamp, damp, rand, randInt, chance, pick, TAU } from './util.js';
 
 const METERS_PER_UNIT = 0.45;
-const PLAYER_RADIUS = 0.7;
-const BASE_SPEED = 56;
-const WEAPON_NAMES = ['PLASMA I', 'TWIN II', 'TRI-LANCE III'];
+const BASE_SPEED = 46;
+const WEAPON_NAMES = ['PULSE I', 'TWIN II', 'TRI-LANCE III'];
+const START_THETA = -Math.PI / 2; // bottom of the tube
+const MAX_ANGVEL = 1.85; // rad/s around the tube
+
+// Only try to load a custom character if one was actually shipped — this keeps
+// the console clean when public/models/ is empty.
+const HAS_CUSTOM_MODEL = Object.keys(import.meta.glob('../public/models/*.glb')).length > 0;
 
 const _v = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _q = new THREE.Quaternion();
 const _plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const _ray = new THREE.Raycaster();
 
@@ -32,7 +50,12 @@ export class Game {
     this.backdrop = new Backdrop(scene, this.palette);
     this.fx = new FX(scene, camera);
     this.bullets = new Bullets(scene, this.fx);
-    this.ship = new Ship(scene, this.palette.tubeB, this.palette.glow);
+    this.runner = new Runner(scene, this.palette);
+    this.runner.onFootstep = (index, pos) => this.onFootstep(index, pos);
+    // optional drop-in model: public/models/runner.glb (silently falls back)
+    if (HAS_CUSTOM_MODEL) this.runner.loadCustomModel('./models/runner.glb');
+    // kept for the boss/projectile code that talks to `game.ship`
+    this.ship = this.runner;
 
     this.input = {
       left: false,
@@ -46,16 +69,15 @@ export class Game {
     };
     this.pointerNDC = new THREE.Vector2(0, 0);
     this.pointerActive = false;
-    this.pointerTarget = { x: 0, y: 0 };
-    this.steerMode = 'pointer';
+    this.pointerSteer = 0;
 
     this.state = 'boot';
     this.paused = false;
     this.time = 0;
     this.runTime = 0;
     this.traveled = 0;
-    this.speed = 30;
-    this.speedTarget = 30;
+    this.speed = 26;
+    this.speedTarget = 26;
     this.boostVisual = 0;
     this.overdrive = 100;
     this.boosting = false;
@@ -88,10 +110,19 @@ export class Game {
     this.deathTimer = 0;
     this.deathNotified = false;
     this.onGameOver = null;
-    this.lastTraveled = 0;
-    this.playedIntro = false;
-    this.speedLines = 0;
-    this.bossWarnTimer = 0;
+    this.attractTimer = 0;
+
+    // runner state
+    this.theta = START_THETA;
+    this.thetaVel = 0;
+    this.thetaTarget = START_THETA;
+    this.camTheta = START_THETA;
+    this.airLift = 0;
+    this.airTime = 0;
+    this.airCooldown = 0;
+    this.leapRequested = false;
+    this.footstepTimer = 0;
+    this.magnetPulse = 0;
 
     this.hazards = [];
     this.pickups = [];
@@ -106,9 +137,8 @@ export class Game {
   resetRun() {
     this.clearEntities();
     this.traveled = 0;
-    this.lastTraveled = 0;
-    this.speed = 28;
-    this.speedTarget = 40;
+    this.speed = 22;
+    this.speedTarget = 30;
     this.runTime = 0;
     this.score = 0;
     this.hull = 100;
@@ -137,16 +167,17 @@ export class Game {
     this.hitstop = 0;
     this.deathNotified = false;
     this.damageFx = 0;
-    this.ship.setVisible(true);
-    this.ship.model.visible = true;
-    this.ship.x = 0;
-    this.ship.y = 0;
-    this.ship.vx = 0;
-    this.ship.vy = 0;
-    this.pointerTarget.x = 0;
-    this.pointerTarget.y = 0;
+    this.theta = START_THETA;
+    this.thetaVel = 0;
+    this.thetaTarget = START_THETA;
+    this.camTheta = START_THETA;
+    this.airLift = 0;
+    this.airTime = 0;
+    this.airCooldown = 0;
+    this.runner.setVisible(true);
+    this.runner.rig.visible = true;
     this.applySector(1);
-    this.placeShip();
+    this.syncRunnerPosition();
     this.engine.addShake(0);
     this.audio.setIntensity(0);
     this.tunnel.impulse(0.4);
@@ -157,24 +188,23 @@ export class Game {
     this.state = 'playing';
     this.paused = false;
     this.runTime = 0;
-    this.enterAt = this.time;
     this.ui?.setBoosting(false);
     this.ui?.setFiring(false);
     this.ui?.hideBoss();
     this.ui?.hideGameOver?.();
     this.audio.gameStart();
-    this.ui?.announce(`SECTOR 01`, this.palette.name, 'thread the wreckage · reach the gate');
-    this.ui?.toast('HOLD FIRE · SPACE — BOOST · SHIFT');
+    this.ui?.announce('SECTOR 01', this.palette.name, 'magnetise · run the wall · reach the gate');
+    this.ui?.toast('A / D — RUN AROUND THE TUBE · W — MAGNET LEAP · SPACE — FIRE');
     this.spawnIntroPickups();
   }
 
   enterAttract() {
     this.resetRun();
-    this.state = 'menu';
     this.paused = false;
+    this.state = 'menu';
     this.attractTimer = 0;
     this.audio.setIntensity(0);
-    this.ship.setVisible(true);
+    this.runner.setVisible(true);
     this.ui?.setBoosting(false);
     this.ui?.setFiring(false);
     this.ui?.hideBoss();
@@ -201,7 +231,6 @@ export class Game {
   setPointerNDC(x, y) {
     this.pointerNDC.set(x, y);
     this.pointerActive = true;
-    this.steerMode = 'pointer';
   }
 
   // ------------------------------------------------------------- sectors
@@ -210,7 +239,7 @@ export class Game {
     this.engine.setPalette(this.palette);
     this.tunnel.setSector(this.palette);
     this.backdrop.setSector(this.palette);
-    this.ship.setPalette(this.palette.tubeB, this.palette.glow);
+    this.runner.setPalette(this.palette);
     this.gate?.setPalette(this.palette);
     this.ui?.setPalette?.(this.palette);
   }
@@ -230,7 +259,6 @@ export class Game {
     this.hull = Math.min(100, this.hull + 14);
     this.overdrive = 100;
     this.applySector(this.level);
-    this.tunnel.setSector(this.palette);
     this.tunnel.impulse(1.1);
     this.engine.addShake(0.35);
     this.audio.gate();
@@ -238,59 +266,68 @@ export class Game {
     this.score += 500 * this.level;
     this.slowmo = 0.6;
     this.ui?.flash();
-    this.ui?.announce(`SECTOR ${String(this.level).padStart(2, '0')}`, this.palette.name, 'gate cleared · hull restored');
+    this.ui?.announce(`SECTOR ${String(this.level).padStart(2, '0')}`, this.palette.name, 'gate cleared · suit patched');
     this.ui?.hideBoss();
     this.audio.setIntensity(0);
     this.spawnIntroPickups();
   }
 
   spawnIntroPickups() {
-    const a = this.traveled + 170;
-    const types = ['arc', 'boost', 'boost', 'repair'];
-    types.forEach((type, i) => {
-      this.spawnPickup(a + i * 9, Math.sin(i * 0.8) * 2.6, Math.cos(i * 0.6) * 1.2, type);
+    const a = this.traveled + 150;
+    ['arc', 'boost', 'boost', 'repair'].forEach((type, i) => {
+      const theta = this.theta + (i - 1.5) * 0.22;
+      this.spawnPickup(a + i * 9, theta, type);
     });
   }
 
   // ------------------------------------------------------------- entities
-  spawnBarrier(a, x, y, w, h, energy = false, hp = 4) {
-    const b = new Barrier(this.scene, { x, y, w, h, energy, hp });
+  spawnArc(a, thetaStart, thetaLen, { depth = 2.4, height = 1.2, energy = false, hp = Infinity } = {}) {
+    const b = new ArcBarrier(this.scene, { thetaStart, thetaLen, depth, height, energy, hp });
     b.a = a;
     this.hazards.push(b);
     return b;
   }
 
-  spawnAsteroid(a, x, y, scale) {
-    const ast = new Asteroid(this.scene, { x, y, scale });
+  spawnAsteroid(a, theta, radiusFromWall = 1.6, scale = 2) {
+    const r = TUBE_RADIUS - radiusFromWall;
+    const ast = new Asteroid(this.scene, { x: Math.cos(theta) * r, y: Math.sin(theta) * r, scale });
+    ast.theta = theta;
     ast.a = a;
     this.hazards.push(ast);
     return ast;
   }
 
-  spawnDrone(a, x, y) {
-    const d = new Drone(this.scene, { x, y });
+  spawnDrone(a, theta, radiusFromWall = 2.2) {
+    const r = TUBE_RADIUS - radiusFromWall;
+    const d = new Drone(this.scene, { x: Math.cos(theta) * r, y: Math.sin(theta) * r });
+    d.theta = theta;
     d.a = a;
     this.hazards.push(d);
     return d;
   }
 
-  spawnMine(a, x, y) {
-    const m = new Mine(this.scene, { x, y });
+  spawnMine(a, theta) {
+    const r = TUBE_RADIUS - 0.7;
+    const m = new Mine(this.scene, { x: Math.cos(theta) * r, y: Math.sin(theta) * r });
+    m.theta = theta;
     m.a = a;
     this.hazards.push(m);
     return m;
   }
 
-  spawnPickup(a, x, y, type = 'arc') {
-    const p = new Pickup(this.scene, { x, y, type });
+  spawnPickup(a, theta, type = 'boost') {
+    const r = TUBE_RADIUS - 1.15;
+    const p = new Pickup(this.scene, { x: Math.cos(theta) * r, y: Math.sin(theta) * r, type });
+    p.theta = theta;
     p.a = a;
     this.pickups.push(p);
     return p;
   }
 
   spawnBossDrones(boss) {
-    for (const sx of [-1, 1]) {
-      const d = this.spawnDrone(boss.a + rand(6, 14), boss.x + sx * 5.2, boss.y + rand(-1.2, 1.2));
+    for (const side of [-1, 1]) {
+      const theta = (boss.theta ?? this.theta) + side * 0.35;
+      const d = this.spawnDrone(boss.a + rand(6, 14), theta, 2.0);
       d.baseX = d.x;
       d.baseY = d.y;
     }
@@ -315,151 +352,180 @@ export class Game {
     while (this.spawnCursor < this.traveled + 320 && guard++ < 4) {
       const a = this.spawnCursor;
       const consumed = this.spawnPattern(a);
-      const gap = Math.max(24, 50 - this.level * 2.4 + rand(-7, 7));
+      const gap = Math.max(30, 58 - this.level * 2.6 + rand(-6, 6));
       this.spawnCursor = a + consumed + gap;
     }
   }
 
+  /** A random angle close to the runner's current wall position. */
+  nearTheta(spread = Math.PI, minOffset = 0) {
+    const dir = chance(0.5) ? 1 : -1;
+    const offset = minOffset + Math.random() * Math.max(0.01, spread - minOffset);
+    return this.theta + dir * offset;
+  }
+
   spawnPattern(a) {
     this.patternIndex++;
-    const lvl = this.level;
     const roll = Math.random();
+    const lvl = this.level;
     let consumed = 8;
 
-    if (roll < 0.16) {
-      // armored door: a beam with a clean opening
-      const gap = rand(5.2, 6.4);
-      const half = gap * 0.5;
-      const width = PLAY_X - half;
-      const y = rand(-1.7, 1.7);
-      const h = rand(1.4, 2.3);
-      this.spawnBarrier(a, -(half + width * 0.5), y, width, h, false, 4);
-      if (chance(0.5)) this.spawnBarrier(a + rand(-1, 1), half + width * 0.5, -y * 0.5, width, h * 0.85, false, 4);
-      consumed = 10;
-    } else if (roll < 0.34) {
-      // single block / double block
-      const count = lvl > 2 && chance(0.35) ? 2 : 1;
+    if (roll < 0.15) {
+      // Full ring wall with one safe gap: run to the opening.
+      const gap = rand(1.15, 1.6);
+      const gapStart = this.theta + rand(-1.6, 1.6);
+      const start = gapStart + gap;
+      const len = TAU - gap;
+      this.spawnArc(a, start, len, { height: 1.35, depth: 3, hp: 5 });
+      consumed = 12;
+    } else if (roll < 0.33) {
+      // One or two blocking arcs on the wall.
+      const count = lvl > 2 && chance(0.4) ? 2 : 1;
       for (let i = 0; i < count; i++) {
-        const w = rand(3.2, 5.0);
-        const h = rand(2.2, 3.9);
-        const x = clamp(rand(-5.5, 5.5), -PLAY_X + w / 2, PLAY_X - w / 2);
-        const y = clamp(rand(-3.2, 3.2), -PLAY_Y + h / 2, PLAY_Y - h / 2);
-        const energy = chance(0.28);
-        this.spawnBarrier(a + i * 14, x, y, w, h, energy, 4);
+        const theta = this.nearTheta(Math.PI * 0.9, 0.35);
+        const len = rand(0.7, 1.25);
+        const energy = chance(0.3);
+        this.spawnArc(a + i * 16, theta - len * 0.5, len, {
+          height: rand(0.95, 1.5),
+          depth: rand(2.2, 3.4),
+          energy,
+          hp: energy ? Infinity : 4,
+        });
       }
-      consumed = count * 14;
-    } else if (roll < 0.5) {
-      // slalom pillars
+      consumed = count * 16;
+    } else if (roll < 0.47) {
+      // Slalom: alternating arcs, one per side.
       const dir = chance(0.5) ? 1 : -1;
-      const s1 = this.spawnBarrier(a, dir * 4.2, rand(0.8, 2.2), 3.2, 3.0, false, 3);
-      s1.nearMissed = false;
-      this.spawnBarrier(a + 26, -dir * 4.0, rand(-2.4, -0.6), 3.4, 3.2, false, 3);
-      this.spawnBarrier(a + 52, dir * 3.8, rand(-0.8, 1.6), 3.1, 2.9, false, 3);
-      consumed = 52;
-    } else if (roll < 0.66) {
-      // drone wing
+      this.spawnArc(a, this.theta + dir * 0.75, 0.85, { height: 1.2, depth: 2.2, hp: 3 });
+      this.spawnArc(a + 26, this.theta - dir * 0.95, 0.9, { height: 1.2, depth: 2.2, hp: 3 });
+      this.spawnArc(a + 52, this.theta + dir * 0.65, 0.8, { height: 1.2, depth: 2.2, hp: 3 });
+      consumed = 56;
+    } else if (roll < 0.63) {
+      // Drone wing hovering off the wall.
       const count = lvl > 2 ? 3 : 2;
       for (let i = 0; i < count; i++) {
-        const x = count === 2 ? (i === 0 ? -4.4 : 4.4) : -4.8 + i * 4.8;
-        this.spawnDrone(a + i * 6, x, rand(-2.6, 2.6));
-      }
-      consumed = 16;
-    } else if (roll < 0.8) {
-      // mine field
-      const count = randInt(3, 5);
-      for (let i = 0; i < count; i++) {
-        const x = -6 + (i / Math.max(1, count - 1)) * 12;
-        if (chance(0.25)) continue;
-        this.spawnMine(a + rand(-4, 4), x + rand(-0.9, 0.9), rand(-3.2, 3.2));
+        const theta = this.theta + (i - (count - 1) / 2) * 0.5 + rand(-0.15, 0.15);
+        this.spawnDrone(a + i * 7, theta, rand(1.8, 2.6));
       }
       consumed = 18;
-    } else if (roll < 0.92) {
-      // asteroid cluster
+    } else if (roll < 0.78) {
+      // Mine ring.
+      const count = randInt(3, 5);
+      for (let i = 0; i < count; i++) {
+        const theta = this.theta + (i - (count - 1) / 2) * 0.45;
+        this.spawnMine(a + rand(-4, 4), theta);
+      }
+      consumed = 18;
+    } else if (roll < 0.9) {
+      // Asteroid cluster drifting near the wall.
       const count = randInt(2, 4);
       for (let i = 0; i < count; i++) {
-        this.spawnAsteroid(a + rand(-6, 6), rand(-5.8, 5.8), rand(-3.6, 3.6), rand(1.6, 2.9));
+        this.spawnAsteroid(a + rand(-6, 6), this.nearTheta(2.4, 0.2), rand(1.2, 2.6), rand(1.4, 2.4));
       }
       consumed = 16;
     } else {
-      // breather: pickup run
-      this.spawnPickupLine(a, 9);
+      this.spawnPickupLine(a, 8, 'mixed');
       consumed = 4;
     }
 
-    // reward trail between obstacles
-    if (chance(0.62) && this.pickups.length < 30) {
+    if (chance(0.6) && this.pickups.length < 32) {
       this.spawnPickupLine(a + consumed + 10, randInt(4, 7), chance(0.45) ? 'mixed' : 'boost');
     }
     return consumed;
   }
 
+  /** A trail of cells that spirals around the tube — rewards wall-running. */
   spawnPickupLine(a, count = 7, mode = 'mixed') {
-    const phase = rand(0, TAU);
+    const startTheta = this.theta + rand(-1.2, 1.2);
+    const dir = chance(0.5) ? 1 : -1;
+    const sweep = rand(0.5, 1.6) * dir;
     for (let i = 0; i < count; i++) {
       let type = 'boost';
       if (mode === 'mixed') {
         if (i === Math.floor(count * 0.5)) type = 'arc';
         else if (i === count - 1) type = chance(0.65) ? 'repair' : 'shield';
-        else if (chance(0.12)) type = chance(0.5) ? 'quantum' : 'shield';
+        else if (chance(0.1)) type = chance(0.5) ? 'quantum' : 'shield';
       } else if (i === Math.floor(count * 0.6)) {
         type = chance(0.5) ? 'arc' : 'shield';
       }
-      const x = Math.sin(phase + i * 0.62) * 3.6;
-      const y = Math.cos(phase * 0.7 + i * 0.44) * 1.7;
-      this.spawnPickup(a + i * 5.2, x, y, type === 'boots' ? 'boost' : type);
+      const theta = startTheta + sweep * (i / Math.max(1, count - 1));
+      this.spawnPickup(a + i * 5.5, theta, type);
     }
   }
 
-  // ------------------------------------------------------------- input/motion
+  // ------------------------------------------------------------- movement
   updateSteering(dt) {
-    const ship = this.ship;
     const input = this.input;
-    const ix = (input.right ? 1 : 0) - (input.left ? 1 : 0) + clamp(input.stickX, -1, 1);
-    const iy = (input.up ? 1 : 0) - (input.down ? 1 : 0) + clamp(input.stickY, -1, 1);
-    const bx = PLAY_X - 0.9;
-    const by = PLAY_Y - 0.7;
-    const prevX = ship.x;
-    const prevY = ship.y;
+    // keyboard + touch stick steer the angle; the pointer acts like a wheel
+    let steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    if (Math.abs(input.stickX) > 0.08) steer = clamp(input.stickX, -1, 1);
+    if (steer === 0 && this.pointerActive) {
+      const px = this.pointerNDC.x;
+      const dead = 0.16;
+      if (Math.abs(px) > dead) steer = clamp(((px - Math.sign(px) * dead) / (1 - dead)) * 1.4, -1, 1);
+    }
+    this.steerInput = steer;
 
-    if (Math.abs(ix) > 0.06 || Math.abs(iy) > 0.06) {
-      this.steerMode = 'keys';
-      const accel = 72;
-      ship.vx += ix * accel * dt;
-      ship.vy += iy * accel * dt;
-      ship.vx *= Math.exp(-7 * dt);
-      ship.vy *= Math.exp(-7 * dt);
-      const maxV = 19;
-      ship.vx = clamp(ship.vx, -maxV, maxV);
-      ship.vy = clamp(ship.vy, -maxV, maxV);
-      ship.x = clamp(ship.x + ship.vx * dt, -bx, bx);
-      ship.y = clamp(ship.y + ship.vy * dt, -by, by);
-      if (Math.abs(ship.x) >= bx) ship.vx *= 0.2;
-      if (Math.abs(ship.y) >= by) ship.vy *= 0.2;
-    } else if (this.steerMode === 'pointer' && this.pointerActive) {
-      this.computePointerTarget();
-      const prevTarget = { x: prevX, y: prevY };
-      ship.x = damp(ship.x, this.pointerTarget.x, 9.5, dt);
-      ship.y = damp(ship.y, this.pointerTarget.y, 9.5, dt);
-      ship.x = clamp(ship.x, -bx, bx);
-      ship.y = clamp(ship.y, -by, by);
-      if (dt > 0.0001) {
-        ship.vx = damp(ship.vx, (ship.x - prevTarget.x) / dt, 12, dt);
-        ship.vy = damp(ship.vy, (ship.y - prevTarget.y) / dt, 12, dt);
+    const accel = 9.5;
+    this.thetaVel += steer * accel * dt;
+    this.thetaVel *= Math.exp(-2.6 * dt);
+    if (Math.abs(steer) < 0.05) this.thetaVel *= Math.exp(-5.5 * dt);
+    this.thetaVel = clamp(this.thetaVel, -MAX_ANGVEL, MAX_ANGVEL);
+    this.theta += this.thetaVel * dt;
+
+    // keep the angle in a readable range (wrapping is seamless)
+    if (this.theta > Math.PI * 4) {
+      this.theta -= TAU * 2;
+      this.thetaTarget -= TAU * 2;
+    } else if (this.theta < -Math.PI * 4) {
+      this.theta += TAU * 2;
+      this.thetaTarget += TAU * 2;
+    }
+
+    // magnet leap ------------------------------------------------------
+    if (this.airCooldown > 0) this.airCooldown -= dt;
+    const wantLeap = input.up || this.leapRequested;
+    if (wantLeap && this.airTime <= 0 && this.airCooldown <= 0 && this.state === 'playing') {
+      this.airTime = 0.001;
+      this.airCooldown = 0.75;
+      this.audio.leap?.();
+      this.fx.particles.burst(
+        _v.set(pathX(this.traveled) + Math.cos(this.theta) * (TUBE_RADIUS - 0.2), pathY(this.traveled) + Math.sin(this.theta) * (TUBE_RADIUS - 0.2), 0),
+        '#9ff6ff',
+        14,
+        { speed: 5, size: 0.3, life: 0.45, spread: 0.5, drag: 2 }
+      );
+      this.magnetPulse = 1;
+    }
+    this.leapRequested = false;
+
+    if (this.airTime > 0) {
+      this.airTime += dt;
+      const T = 0.62;
+      const t = clamp(this.airTime / T, 0, 1);
+      this.airLift = Math.sin(t * Math.PI) * 1.75;
+      if (this.airTime >= T) {
+        this.airTime = 0;
+        this.airLift = 0;
+        this.magnetPulse = 1;
+        this.audio.land?.();
       }
     } else {
-      ship.vx *= Math.exp(-5 * dt);
-      ship.vy *= Math.exp(-5 * dt);
-      ship.x = clamp(ship.x + ship.vx * dt, -bx, bx);
-      ship.y = clamp(ship.y + ship.vy * dt, -by, by);
+      this.airLift = 0;
     }
+
+    this.magnetPulse = Math.max(0, this.magnetPulse - dt * 3.2);
   }
 
-  computePointerTarget() {
-    _ray.setFromCamera(this.pointerNDC, this.camera);
-    const hit = _ray.ray.intersectPlane(_plane, _v);
-    if (!hit) return;
-    this.pointerTarget.x = clamp(hit.x - pathX(this.traveled), -PLAY_X + 0.9, PLAY_X - 0.9);
-    this.pointerTarget.y = clamp(hit.y - pathY(this.traveled), -PLAY_Y + 0.7, PLAY_Y - 0.7);
+  syncRunnerPosition() {
+    const radius = RUNNER_CENTER_R - this.airLift;
+    this.runnerX = Math.cos(this.theta) * radius;
+    this.runnerY = Math.sin(this.theta) * radius;
+    // compatibility for boss/projectile code that reads game.ship.{x,y,vx,vy}
+    this.ship.x = this.runnerX;
+    this.ship.y = this.runnerY;
+    this.ship.vx = -Math.sin(this.theta) * this.thetaVel * radius;
+    this.ship.vy = Math.cos(this.theta) * this.thetaVel * radius;
   }
 
   updateWeapon(dt) {
@@ -468,31 +534,54 @@ export class Game {
     this.ui?.setFiring(firing);
     if (!firing || this.fireCooldown > 0) return;
     this.fireCooldown = this.weaponLevel >= 3 ? 0.115 : 0.14;
-    this.bullets.firePlayer(this.traveled + 3.0, this.ship.x, this.ship.y, this.weaponLevel);
-    this.audio.shoot(this.weaponLevel, clamp(this.ship.x / 8, -0.7, 0.7));
-    _v.set(pathX(this.traveled + 2.4) + this.ship.x, pathY(this.traveled + 2.4) + this.ship.y, -2.4);
+    const r = RUNNER_CENTER_R - 0.15;
+    const bx = Math.cos(this.theta) * r;
+    const by = Math.sin(this.theta) * r;
+    this.bullets.firePlayer(this.traveled + 2.2, bx, by, this.weaponLevel);
+    this.audio.shoot(this.weaponLevel, clamp(this.thetaVel / MAX_ANGVEL, -0.7, 0.7));
+    _v.set(pathX(this.traveled + 2.0) + bx, pathY(this.traveled + 2.0) + by, -2.0);
     this.fx.sparks(_v, '#9ffaff', 2, { speed: 2.4, size: 0.22, life: 0.18, spread: 0.08 });
   }
 
+  onFootstep(index, pos) {
+    if (this.state !== 'playing') return;
+    if (!pos) return;
+    const speedFactor = clamp(this.speed / BASE_SPEED, 0.5, 2);
+    this.fx.particles.burst(pos, '#8ff6ff', Math.round(3 * speedFactor), {
+      speed: 3.4,
+      size: 0.2,
+      life: 0.3,
+      spread: 0.12,
+      drag: 3.2,
+    });
+    if (this.boosting) {
+      this.fx.particles.burst(pos, '#ffb3ee', 3, { speed: 4.5, size: 0.24, life: 0.35, spread: 0.15, drag: 2.6 });
+    }
+    this.audio.footstep?.(index, this.boosting);
+  }
+
   // ------------------------------------------------------------- collisions
-  collisionShipVsHazards() {
-    const ship = this.ship;
+  collisionRunnerVsHazards() {
+    const airborne = this.airLift > 0.55;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
-      if (h.passive || h.dead) continue;
+      if (h.dead) continue;
       const ahead = h.a - this.traveled;
-      if (!h.hitPlayer && Math.abs(ahead) < 2.4) {
+
+      if (!h.hitPlayer && Math.abs(ahead) < 2.6) {
         let hit = false;
-        if (h.halfW !== undefined) {
-          const dx = Math.abs(ship.x - h.x) - h.halfW;
-          const dy = Math.abs(ship.y - h.y) - h.halfH;
-          hit = Math.max(0, dx) ** 2 + Math.max(0, dy) ** 2 < PLAYER_RADIUS * PLAYER_RADIUS;
+        if (h.thetaStart !== undefined) {
+          // wall arc: only the angular position matters, and a leap clears it
+          if (!airborne && h.hitsAngle(this.theta, BODY_HALF_ANGLE)) hit = true;
         } else {
-          hit = Math.hypot(ship.x - h.x, ship.y - h.y) < h.radius + PLAYER_RADIUS;
+          const dx = h.x - this.runnerX;
+          const dy = h.y - this.runnerY;
+          hit = Math.hypot(dx, dy) < h.radius + 0.55;
         }
         if (hit) {
           h.hitPlayer = true;
-          const amount = h.kind === 'mine' ? 18 : h.kind === 'drone' ? 16 : h.kind === 'energy' ? 16 : h.kind === 'asteroid' ? 14 : 18;
+          const amount =
+            h.kind === 'mine' ? 18 : h.kind === 'drone' ? 16 : h.kind === 'arcEnergy' ? 16 : h.kind === 'asteroid' ? 14 : 18;
           this.damagePlayer(amount, h.kind);
           if (h.kind === 'mine' || h.kind === 'drone' || h.kind === 'asteroid') {
             this.destroyHazard(h, false);
@@ -500,40 +589,39 @@ export class Game {
           }
         }
       }
+
       if (!h.passed && ahead < 0) {
         h.passed = true;
         if (!h.hitPlayer && !h.dead) this.checkNearMiss(h);
       }
     }
 
-    // enemy bullets
+    // enemy fire
     for (let i = this.bullets.enemy.length - 1; i >= 0; i--) {
       const b = this.bullets.enemy[i];
       if (b.ahead < -2 || b.ahead > 2) continue;
-      if (Math.hypot(b.x - ship.x, b.y - ship.y) < b.radius + PLAYER_RADIUS) {
+      if (Math.hypot(b.x - this.runnerX, b.y - this.runnerY) < b.radius + 0.6) {
         this.bullets.enemyPool.kill(b);
         this.damagePlayer(b.damage, 'bullet');
       }
     }
 
-    // collectibles
+    // pickups (wall cells)
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const p = this.pickups[i];
-      if (Math.abs(p.a - this.traveled) < 2.6 && Math.hypot(p.x - ship.x, p.y - ship.y) < 1.9) {
+      if (Math.abs(p.a - this.traveled) < 2.6 && Math.hypot(p.x - this.runnerX, p.y - this.runnerY) < 1.5) {
         this.collectPickup(p);
       }
     }
   }
 
   checkNearMiss(h) {
-    const ship = this.ship;
     let gap;
-    if (h.halfW !== undefined) {
-      const dx = Math.max(0, Math.abs(ship.x - h.x) - h.halfW);
-      const dy = Math.max(0, Math.abs(ship.y - h.y) - h.halfH);
-      gap = Math.hypot(dx, dy);
+    if (h.thetaStart !== undefined) {
+      const mid = h.thetaStart + h.thetaLen * 0.5;
+      gap = Math.abs(angleDelta(this.theta, mid)) * TUBE_RADIUS - h.thetaLen * 0.5 * TUBE_RADIUS;
     } else {
-      gap = Math.max(0, Math.hypot(ship.x - h.x, ship.y - h.y) - h.radius);
+      gap = Math.max(0, Math.hypot(this.runnerX - h.x, this.runnerY - h.y) - h.radius);
     }
     if (gap < 2.6 && !h.nearMissed) {
       h.nearMissed = true;
@@ -542,11 +630,16 @@ export class Game {
       this.combo += 1;
       this.comboTimer = 4.5;
       this.score += Math.round(25 * this.multiplier);
-      this.fx.nearMiss(_v.set(pathX(this.traveled) + ship.x, pathY(this.traveled) + ship.y, -4));
-      this.audio.nearMiss(clamp(ship.x / 8, -0.8, 0.8));
+      const p = this.wallPointWorld(this.theta, RUNNER_CENTER_R, 0);
+      this.fx.nearMiss(p);
+      this.audio.nearMiss(clamp(this.thetaVel / MAX_ANGVEL, -0.8, 0.8));
       this.engine.addShake(0.05);
-      this.ui?.popupWorld(_v.clone().add(new THREE.Vector3(0, 1.5, 0)), 'NEAR MISS', 'kill');
+      this.ui?.popupWorld(p.clone().add(new THREE.Vector3(0, 1.6, 0)), 'NEAR MISS', 'kill');
     }
+  }
+
+  wallPointWorld(theta, radius, z) {
+    return new THREE.Vector3(Math.cos(theta) * radius + pathX(this.traveled), Math.sin(theta) * radius + pathY(this.traveled), z);
   }
 
   collisionBulletsVsTargets() {
@@ -556,9 +649,9 @@ export class Game {
 
       if (this.boss && !this.boss.dying) {
         const boss = this.boss;
-        if (Math.abs(b.a - boss.a) < 3.2) {
-          const dx = (b.x - boss.x) / 5.6;
-          const dy = (b.y - boss.y) / 3.4;
+        if (Math.abs(b.a - boss.a) < 6) {
+          const dx = (b.x - boss.x) / 6.2;
+          const dy = (b.y - boss.y) / 5.2;
           if (dx * dx + dy * dy < 1.0) {
             _v.set(pathX(boss.a) + b.x, pathY(boss.a) + b.y, -(boss.a - this.traveled));
             boss.damage(1, this, _v);
@@ -572,10 +665,12 @@ export class Game {
         for (let j = this.hazards.length - 1; j >= 0; j--) {
           const h = this.hazards[j];
           if (h.dead || h.passive) continue;
-          if (Math.abs(b.a - h.a) > 2.6) continue;
+          if (Math.abs(b.a - h.a) > 2.8) continue;
           let hit;
-          if (h.halfW !== undefined) {
-            hit = Math.abs(b.x - h.x) < h.halfW + 0.3 && Math.abs(b.y - h.y) < h.halfH + 0.3;
+          if (h.thetaStart !== undefined) {
+            const r = Math.hypot(b.x, b.y);
+            const t = Math.atan2(b.y, b.x);
+            hit = r > h.innerR - 0.6 && h.hitsAngle(t, 0.02);
           } else {
             hit = Math.hypot(b.x - h.x, b.y - h.y) < h.radius + 0.3;
           }
@@ -594,7 +689,12 @@ export class Game {
   destroyHazard(h, byPlayer = true) {
     const idx = this.hazards.indexOf(h);
     if (idx >= 0) this.hazards.splice(idx, 1);
-    _v.set(pathX(h.a) + h.x, pathY(h.a) + h.y, -(h.a - this.traveled));
+    if (h.thetaStart !== undefined) {
+      const mid = h.thetaStart + h.thetaLen * 0.5;
+      _v.set(Math.cos(mid) * (h.innerR ?? TUBE_RADIUS - 1) + pathX(h.a), Math.sin(mid) * (h.innerR ?? TUBE_RADIUS - 1) + pathY(h.a), -(h.a - this.traveled));
+    } else {
+      _v.set(pathX(h.a) + h.x, pathY(h.a) + h.y, -(h.a - this.traveled));
+    }
     const scale = h.kind === 'asteroid' ? h.scale * 0.5 : h.kind === 'drone' ? 0.65 : 0.9;
     const color = h.kind === 'asteroid' ? '#b39bff' : h.kind === 'drone' ? '#ff8a9d' : '#ffb03a';
     this.fx.explosion(_v, color, scale);
@@ -607,16 +707,12 @@ export class Game {
       this.overdrive = Math.min(100, this.overdrive + 3);
       const gained = Math.round((h.score || 50) * this.multiplier);
       this.score += gained;
-      this.ui?.popupWorld(_v, `+${gained}`, h.kind === 'drone' ? 'kill' : 'kill');
+      this.ui?.popupWorld(_v, `+${gained}`, 'kill');
       if (h.kind === 'drone' && chance(0.35)) {
-        this.spawnPickup(h.a, h.x, h.y, chance(0.5) ? 'boost' : 'arc');
+        this.spawnPickup(h.a, Math.atan2(h.y, h.x), chance(0.5) ? 'boost' : 'arc');
       }
     }
     h.dispose(this.scene);
-  }
-
-  explodeHazard(h, byPlayer) {
-    this.destroyHazard(h, byPlayer);
   }
 
   collectPickup(p) {
@@ -637,7 +733,7 @@ export class Game {
         if (this.weaponLevel < 3) {
           this.weaponLevel++;
           this.audio.levelUp();
-          this.ui?.announce('WEAPON UPGRADE', WEAPON_NAMES[this.weaponLevel - 1], 'more barrels · more problems');
+          this.ui?.announce('BLASTER UPGRADE', WEAPON_NAMES[this.weaponLevel - 1], 'more barrels · more problems');
         } else {
           this.score += 250;
           this.ui?.popupWorld(_v, '+250', 'pickup');
@@ -667,8 +763,7 @@ export class Game {
 
   damagePlayer(amount, source = 'impact') {
     if (this.invuln > 0 || this.state !== 'playing') return;
-    const ship = this.ship;
-    _v.set(pathX(this.traveled) + ship.x, pathY(this.traveled) + ship.y, 0);
+    _v.copy(this.wallPointWorld(this.theta, RUNNER_CENTER_R, -0.2));
 
     if (this.shield > 0) {
       this.shield = 0;
@@ -693,7 +788,7 @@ export class Game {
     this.engine.addShake(0.55);
     this.hitstop = 0.045;
     this.ui?.triggerDamage(1);
-    this.ui?.popupWorld(_v, `-${amount} HULL`, 'hurt');
+    this.ui?.popupWorld(_v, `-${amount} SUIT`, 'hurt');
     this.ui?.setFiring(false);
     if (this.hull <= 0) this.beginDeath(source);
   }
@@ -706,8 +801,7 @@ export class Game {
     this.boosting = false;
     this.shield = 0;
     this.combo = 0;
-    const ship = this.ship;
-    _v.set(pathX(this.traveled) + ship.x, pathY(this.traveled) + ship.y, 0);
+    _v.copy(this.wallPointWorld(this.theta, RUNNER_CENTER_R, 0));
     this.fx.explosion(_v, '#ffb03a', 2.2);
     this.fx.explosion(_v, '#ff5470', 1.4);
     this.audio.explosion(2);
@@ -720,7 +814,7 @@ export class Game {
     this.slowmo = 1.2;
     this.speedTarget = 4;
     setTimeout(() => {
-      this.ship.setVisible(false);
+      this.runner.setVisible(false);
     }, 120);
     void source;
   }
@@ -739,7 +833,8 @@ export class Game {
     this.audio.explosion(2);
     this.audio.setIntensity(0);
     this.ui?.announce('WARDEN CRITICAL', 'CORE BREACH', 'gate sequence unlocking');
-    this.ui?.popupWorld(_v.set(pathX(boss.a) + boss.x, pathY(boss.a) + boss.y, -(boss.a - this.traveled)), `+${2500 * this.level}`, 'combo');
+    _v.set(pathX(boss.a) + boss.x, pathY(boss.a) + boss.y, -(boss.a - this.traveled));
+    this.ui?.popupWorld(_v, `+${2500 * this.level}`, 'combo');
   }
 
   finalizeBoss() {
@@ -759,7 +854,7 @@ export class Game {
     this.tunnel.impulse(0.8);
     this.audio.gate();
     this.ui?.hideBoss();
-    this.ui?.announce('GATE OPEN', 'SECTOR CLEAR', 'fly through the ring');
+    this.ui?.announce('GATE OPEN', 'SECTOR CLEAR', 'run through the ring');
     boss.dispose();
     this.boss = null;
   }
@@ -773,7 +868,7 @@ export class Game {
     let scale = 1;
     if (this.slowmo > 0) {
       this.slowmo -= dt;
-      scale = 0.52;
+      scale = 0.55;
     }
     if (this.hitstop > 0) {
       this.hitstop -= dt;
@@ -796,24 +891,28 @@ export class Game {
     this.engine.setDamage(this.damageFx);
     this.engine.update(dt);
     this.bullets.update(dt, this.traveled);
+
     if (this.state === 'playing' || this.state === 'dying') {
       this.updateHazards(dt);
       this.collisionBulletsVsTargets();
-      if (this.state === 'playing') this.collisionShipVsHazards();
+      if (this.state === 'playing') this.collisionRunnerVsHazards();
       this.updateGate(dt);
     } else if (this.state === 'menu') {
       this.updateHazards(dt);
     }
+
+    this.syncRunnerPosition();
     this.placeEntities();
     this.updateCamera(dt);
     this.updateVisuals(dt);
-    this.updateShipVisual(dt);
+    this.updateRunnerVisual(dt);
     this.ui?.setBoosting(this.boosting);
     if (this.state === 'playing') this.updateProgress();
   }
 
   updatePlaying(dt, sdt) {
     this.updateSteering(sdt);
+    this.syncRunnerPosition();
     this.updateWeapon(dt);
 
     const boosting = this.input.boost && this.overdrive > 0.5 && !this.boostLocked;
@@ -823,6 +922,7 @@ export class Game {
         this.audio.boost();
         this.ui?.setBoosting(true);
         this.engine.addShake(0.08);
+        this.magnetPulse = 1;
       } else {
         this.audio.boostEnd();
         this.engine.addShake(0.04);
@@ -849,17 +949,19 @@ export class Game {
     this.multiplier = Math.min(8, 1 + this.combo * 0.18);
     this.maxMultiplier = Math.max(this.maxMultiplier, this.multiplier);
 
+    const brake = this.input.down ? 0.68 : 1;
     const base = BASE_SPEED + (this.level - 1) * 3.2;
     const introRamp = clamp(this.runTime / 2.4, 0.5, 1);
-    this.speedTarget = base * introRamp * (this.boosting ? 1.9 : 1);
+    this.speedTarget = base * introRamp * brake * (this.boosting ? 1.85 : 1);
     this.speed = damp(this.speed, this.speedTarget, 2.4, dt);
     this.traveled += this.speed * sdt;
-    this.score += this.speed * sdt * 0.42 * this.multiplier * (this.boosting ? 1.25 : 1);
+    this.score += this.speed * sdt * 0.5 * this.multiplier * (this.boosting ? 1.25 : 1);
 
     if (!this.bossTriggered && this.traveled > this.sectorStart + this.sectorLength * 0.72) {
       this.spawnBoss();
     }
     if (!this.bossTriggered) this.updateSpawner();
+
     if (this.boss) {
       this.boss.update(dt, this);
       if (this.boss && this.boss.dying && this.boss.finished) this.finalizeBoss();
@@ -869,37 +971,33 @@ export class Game {
       this.gate.open = Math.min(1, this.gate.open + dt * 0.8);
       if (this.traveled >= this.gate.a - 2) this.nextSector();
     }
-    if (this.input.fire) {
-      this.engine.addShake(0.008);
-    }
     this.audio.setIntensity(this.boss ? 1 : Math.min(0.5, 0.1 + this.level * 0.07));
   }
 
   updateAttract(dt, sdt) {
-    this.attractTimer = (this.attractTimer || 0) + dt;
+    this.attractTimer += dt;
     const t = this.attractTimer;
-    this.steerMode = 'pointer';
-    this.pointerActive = true;
-    this.pointerTarget.x = Math.sin(t * 0.5) * 4.2 + Math.sin(t * 0.23) * 1.6;
-    this.pointerTarget.y = Math.sin(t * 0.67 + 1) * 2.2;
-    this.updateSteering(sdt);
-    this.speedTarget = 42;
-    this.speed = damp(this.speed, this.speedTarget, 1.4, dt);
+    // weave around the tube by itself
+    this.thetaTarget = START_THETA + Math.sin(t * 0.5) * 1.5 + Math.sin(t * 0.23) * 0.7;
+    const steer = clamp((this.thetaTarget - this.theta) * 2.2, -1, 1);
+    this.thetaVel += steer * 8 * dt;
+    this.thetaVel *= Math.exp(-3.2 * dt);
+    this.theta += this.thetaVel * dt;
+    this.steerInput = steer;
+    this.speed = damp(this.speed, 30, 1.2, dt);
     this.traveled += this.speed * sdt;
     this.boosting = false;
+    this.airTime = 0;
+    this.airLift = 0;
     this.invuln = 1;
-
-    if (chance(dt * 0.7)) {
-      const a = this.traveled + rand(180, 260);
-      this.spawnAsteroid(a, rand(-6, 6), rand(-4, 4), rand(1.0, 2.4));
-    }
-    this.ui?.setBoosting(false);
-    this.playerWeaponIdle(dt);
-  }
-
-  playerWeaponIdle(dt) {
     this.fireCooldown -= dt;
+    this.ui?.setBoosting(false);
     this.ui?.setFiring(false);
+
+    if (chance(dt * 0.55)) {
+      const a = this.traveled + rand(190, 270);
+      this.spawnAsteroid(a, this.nearTheta(2.6), rand(2.4, 4), rand(1.2, 2.2));
+    }
   }
 
   updateAfterDeath(dt, sdt) {
@@ -942,18 +1040,12 @@ export class Game {
   updateGate(dt) {
     if (!this.gate) return;
     this.gate.update(dt, this);
-    if (!this.gateGroupA) this.gateGroupA = this.gate;
-  }
-
-  placeShip() {
-    this.ship.root.position.set(pathX(this.traveled) + this.ship.x, pathY(this.traveled) + this.ship.y, 0);
   }
 
   placeEntities() {
     const T = this.traveled;
-    this.placeShip();
     for (const h of this.hazards) {
-      h.group.position.set(pathX(h.a) + h.x, pathY(h.a) + h.y, -(h.a - T));
+      if (h.group) h.group.position.set(pathX(h.a), pathY(h.a), -(h.a - T));
     }
     for (const p of this.pickups) {
       p.group.position.set(pathX(p.a) + p.x, pathY(p.a) + p.y, -(p.a - T));
@@ -969,25 +1061,38 @@ export class Game {
 
   updateCamera(dt) {
     const cam = this.camera;
-    const ship = this.ship;
-    // portrait / narrow screens need a longer lens distance so the tube and
-    // the ship stay fully readable
-    const narrow = clamp((1.25 - cam.aspect) / 0.7, 0, 1);
-    const back = 9.4 + this.boostVisual * 0.7 + narrow * 5.6;
-    const shake = this.engine.shake;
+    if (this.debugCamera) return; // tooling hook: free camera for close-ups
+    // camera follows her angle with a little lag so turns read as motion
+    const follow = this.state === 'menu' ? 3.2 : 6.5;
+    this.camTheta = damp(this.camTheta, this.theta, follow, dt);
+    const camTheta = this.camTheta;
+
+    const back = 4.1 + this.boostVisual * 0.6;
     const camA = this.traveled - back;
+    const camRadius = TUBE_RADIUS - 1.35;
+    const shake = this.engine.shake;
     cam.position.set(
-      pathX(camA) + ship.x * 0.32 + shake.x,
-      pathY(camA) + 1.75 + narrow * 0.9 + ship.y * 0.32 + shake.y,
+      pathX(camA) + Math.cos(camTheta) * camRadius + shake.x * 0.5,
+      pathY(camA) + Math.sin(camTheta) * camRadius + shake.y * 0.5,
       back
     );
-    const lookA = this.traveled + 32;
-    cam.up.set(0, 1, 0);
-    cam.lookAt(pathX(lookA) + ship.x * 0.5, pathY(lookA) + 0.55 + ship.y * 0.45, -32);
-    const roll = clamp(-ship.vx * 0.008, -0.1, 0.1) + shake.roll + Math.sin(this.time * 0.33) * 0.006;
-    cam.rotateZ(roll);
+    // up is toward the axis: the wall stays under her boots
+    cam.up.set(-Math.cos(camTheta), -Math.sin(camTheta), 0);
 
-    const targetFov = 70 + this.boostVisual * 13 + narrow * 8;
+    // look a little past her, down the tunnel, at roughly her wall height.
+    // the aim angle is mostly the (lagging) camera angle so she stays centred,
+    // with a hint of her real angle so turns still read as motion
+    const aimTheta = camTheta + angleDelta(this.theta, camTheta) * 0.2;
+    const lookA = this.traveled + 9;
+    const lookR = TUBE_RADIUS - 2.6;
+    cam.lookAt(
+      pathX(lookA) + Math.cos(aimTheta) * lookR,
+      pathY(lookA) + Math.sin(aimTheta) * lookR,
+      -9
+    );
+    cam.rotateZ(shake.roll + Math.sin(this.time * 0.33) * 0.006);
+
+    const targetFov = 72 + this.boostVisual * 12;
     if (Math.abs(cam.fov - targetFov) > 0.02) {
       cam.fov = damp(cam.fov, targetFov, 4, dt);
       cam.updateProjectionMatrix();
@@ -995,31 +1100,45 @@ export class Game {
   }
 
   updateVisuals(dt) {
+    this.tunnel.setRunner(this.theta, 0.55 + this.magnetPulse * 0.75 + this.boostVisual * 0.3);
     this.tunnel.update(dt, this.traveled, this.time, this.boostVisual);
     this.backdrop.update(dt, this.camera, this.speed, this.boostVisual);
     this.fx.update(dt);
-
-    // engine trails
-    const ship = this.ship;
-    const cx = pathX(this.traveled) + ship.x;
-    const cy = pathY(this.traveled) + ship.y;
-    _v.set(cx - 0.36, cy - 0.05, 1.15);
-    this.fx.engineTrail(_v, this.palette.glow, this.boosting);
-    _v.set(cx + 0.36, cy - 0.05, 1.15);
-    this.fx.engineTrail(_v, this.palette.glow, this.boosting);
   }
 
-  updateShipVisual(dt) {
-    const ship = this.ship;
+  updateRunnerVisual(dt) {
+    const runner = this.runner;
+    const theta = this.theta;
+    const radius = RUNNER_CENTER_R - this.airLift;
+    const x = pathX(this.traveled) + Math.cos(theta) * radius;
+    const y = pathY(this.traveled) + Math.sin(theta) * radius;
+    runner.setWallBasis(theta, _q);
+    runner.setWorldPose(x, y, 0, _q, theta);
+
     if (this.state === 'playing') {
       const blink = this.invuln > 0 && this.invuln < 0.9 && Math.floor(this.time * 18) % 2 === 0;
-      ship.model.visible = !blink;
+      runner.rig.visible = !blink;
     } else if (this.state === 'dying' || this.state === 'over') {
-      ship.model.visible = false;
+      runner.rig.visible = false;
     }
-    ship.setBank(clamp(ship.vx / 14, -1, 1));
-    ship.setTilt(clamp(ship.vy / 14, -1, 1));
-    ship.update(dt, { boosting: this.boosting, speed: this.speed, shield: this.shield });
+
+    runner.update(dt, {
+      speed: this.speed,
+      turn: clamp(this.thetaVel / MAX_ANGVEL, -1, 1),
+      boosting: this.boosting,
+      shield: this.shield,
+      airborne: this.airLift > 0.2,
+    });
+
+    // jump trail
+    if (this.airLift > 0.2 && Math.random() < 0.5) {
+      const trailPos = this.wallPointWorld(theta, radius + 0.55, 0);
+      this.fx.particles.trail(trailPos, '#9ff6ff', 1, {
+        size: 0.22,
+        life: 0.3,
+        speed: 1.2,
+      });
+    }
   }
 
   updateProgress() {
@@ -1042,7 +1161,8 @@ export class Game {
     this.bossTriggered = true;
     this.bossRewarded = false;
     this.boss = new Warden(this.scene, this.level, this.palette, this.audio);
-    this.boss.a = this.traveled + 58;
+    this.boss.a = this.traveled + 42;
+    this.boss.theta = this.theta;
     this.boss.start();
     this.audio.setIntensity(1);
     this.tunnel.setGateWarmth(0.7);
@@ -1050,15 +1170,14 @@ export class Game {
     this.ui?.announce('WARNING', 'WARDEN DETECTED', 'destroy the core to open the gate');
     this.engine.addShake(0.3);
     this.ui?.flash(true);
-    // clear drones/bullets from the approach to give the boss room
     this.bullets.enemyPool.clear();
     this.spawnCursor = this.traveled + 400;
   }
 
   fireDroneShot(drone) {
     const t = Math.max(0.25, (drone.a - this.traveled) / (this.speed + 40));
-    const tx = this.ship.x + this.ship.vx * t * 0.55;
-    const ty = this.ship.y + this.ship.vy * t * 0.55;
+    const tx = this.runnerX + this.ship.vx * t * 0.4;
+    const ty = this.runnerY + this.ship.vy * t * 0.4;
     const dx = tx - drone.x;
     const dy = ty - drone.y;
     const len = Math.max(0.1, Math.hypot(dx, dy));
@@ -1082,7 +1201,7 @@ export class Game {
       multiplier: mult,
       combo: Math.floor(this.combo),
       distance: this.traveled * METERS_PER_UNIT,
-      kmh: Math.round(this.speed * 13),
+      kmh: Math.round(this.speed * 16),
       level: this.level,
       sectorName: this.palette.name,
       progress: this.progress || 0,
@@ -1092,6 +1211,8 @@ export class Game {
       overdrive: Math.round(this.overdrive),
       weaponLevel: this.weaponLevel,
       boosting: this.boosting,
+      wallAngle: this.theta,
+      airborne: this.airLift > 0.2,
       boss: this.boss ? { name: this.boss.name, hp: this.boss.hp, maxHp: this.boss.maxHp } : null,
       fireCooldown: this.fireCooldown,
     };

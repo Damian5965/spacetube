@@ -5,6 +5,32 @@ export const TUBE_RADIUS = 10;
 export const PLAY_X = 6.9;
 export const PLAY_Y = 4.8;
 
+// The runner sticks to the inside of the tube: her feet touch the wall at
+// radius TUBE_RADIUS and her body extends toward the axis.
+export const WALL_RADIUS = TUBE_RADIUS;
+export const RUNNER_CENTER_R = TUBE_RADIUS - 0.92;
+export const BODY_HALF_ANGLE = 0.075;
+
+/** Radial unit vector pointing from the tube axis to the wall at angle theta. */
+export function radialAt(theta, out = { x: 0, y: 0 }) {
+  out.x = Math.cos(theta);
+  out.y = Math.sin(theta);
+  return out;
+}
+
+/** Cross-section point on the wall (used for hazards and the camera). */
+export function wallPoint(theta, radius) {
+  return { x: Math.cos(theta) * radius, y: Math.sin(theta) * radius };
+}
+
+/** Signed shortest angular distance a - b, wrapped into [-PI, PI]. */
+export function angleDelta(a, b) {
+  let d = (a - b) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
 const AX1 = 3.4;
 const AF1 = 0.0155;
 const AX2 = 4.6;

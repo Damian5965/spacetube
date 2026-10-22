@@ -463,6 +463,29 @@ export class AudioEngine {
     this.noise({ dur: 2.2, gain: 0.13, type: 'lowpass', freq: 1200, endFreq: 90 });
   }
 
+  /** Magnetic boot slap on the tube wall. Alternating pan sells the stride. */
+  footstep(index = 0, boosted = false) {
+    if (!this.ready) return;
+    const pan = index % 2 === 0 ? -0.28 : 0.28;
+    const gain = boosted ? 0.045 : 0.03;
+    this.noise({ dur: 0.075, gain, type: 'bandpass', freq: boosted ? 2100 : 1550, endFreq: 420, q: 1.2, pan });
+    this.tone({ type: 'square', freq: 118 + (index % 2) * 22, endFreq: 52, dur: 0.085, gain: gain * 0.55, filter: 420, pan });
+  }
+
+  /** Boots release the wall. */
+  leap() {
+    if (!this.ready) return;
+    this.tone({ type: 'sine', freq: 260, endFreq: 980, dur: 0.22, gain: 0.05, filter: 2400 });
+    this.noise({ dur: 0.18, gain: 0.05, type: 'bandpass', freq: 900, endFreq: 3200, q: 1.3 });
+  }
+
+  /** Boots clamp back onto the wall. */
+  land() {
+    if (!this.ready) return;
+    this.tone({ type: 'sine', freq: 620, endFreq: 90, dur: 0.18, gain: 0.07, filter: 900 });
+    this.noise({ dur: 0.14, gain: 0.06, type: 'lowpass', freq: 1800, endFreq: 260 });
+  }
+
   levelUp() {
     if (!this.ready) return;
     const t = this.ctx.currentTime;

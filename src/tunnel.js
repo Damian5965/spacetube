@@ -56,6 +56,8 @@ const fragmentShader = /* glsl */ `
   uniform float uPulse;
   uniform float uGateWarmth;
   uniform float uBehind;
+  uniform float uRunnerA;
+  uniform float uRunnerW;
 
   varying float vAhead;
   varying float vA;
@@ -124,6 +126,14 @@ const fragmentShader = /* glsl */ `
     col += uGlow * node * 1.0;
     col += uGlow * (hoop * 1.1 + hoopGlow);
     col += uGlow * (rail * 0.55 + railCore * 1.2 + railHalo);
+
+    // magnet wake: the wall lights up right under her boots and fades behind
+    float dRun = abs(fract(vAngle - uRunnerA + 0.5) - 0.5);
+    float wake = 1.0 - smoothstep(0.0, 0.06, dRun);
+    wake *= 1.0 - smoothstep(3.0, 30.0, vAhead);
+    wake *= smoothstep(-6.0, 1.0, vAhead);
+    col += uGlow * wake * 0.85 * uRunnerW;
+    col += vec3(0.55, 0.95, 1.0) * wake * 0.35 * uRunnerW;
     col += vec3(1.0, 0.9, 0.72) * runLight * 1.2;
     col += uColorB * pulse * 0.8 + uColorB * pulse2 * 0.45;
     col += uGlow * data * 1.2;
@@ -135,7 +145,7 @@ const fragmentShader = /* glsl */ `
     // Additive slices pile up near the camera and at the vanishing point, so
     // fade both ends: the wall right beside the camera sits in shadow, which
     // keeps barriers readable, and the far end melts into the void.
-    float nearFade = smoothstep(1.0, 22.0, vAhead);
+    float nearFade = smoothstep(2.0, 14.0, vAhead);
     float farFade = 1.0 - smoothstep(95.0, 320.0, vAhead);
     float alpha = nearFade * farFade;
 
@@ -223,6 +233,8 @@ export class Tunnel {
       uBoost: { value: 0 },
       uPulse: { value: 0 },
       uGateWarmth: { value: 0 },
+      uRunnerA: { value: 0 },
+      uRunnerW: { value: 1 },
     };
     this.target = new THREE.Color();
     this.material = new THREE.ShaderMaterial({
@@ -311,6 +323,13 @@ export class Tunnel {
   setSector(palette) {
     this.targetPalette = palette;
     this.uniforms.uGateWarmth.value = 0.6;
+  }
+
+  /** Angle of the runner so the wall glows under her boots. */
+  setRunner(theta, strength = 1) {
+    const u = this.uniforms;
+    u.uRunnerA.value = theta / (Math.PI * 2);
+    u.uRunnerW.value = strength;
   }
 
   setGateWarmth(v) {

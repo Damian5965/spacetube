@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { glowTexture, hazardTexture, hexTexture, starTexture } from './textures.js';
 import { rand, randInt, clamp, TAU } from './util.js';
-import { pathX, pathY } from './path.js';
+import { pathX, pathY, TUBE_RADIUS, angleDelta } from './path.js';
 
 const shared = {};
 
@@ -438,13 +438,22 @@ export class Drone {
   update(dt, game) {
     const t = game.time;
     this.phase += dt;
-    // slow lateral tracking
-    this.baseX += clamp(game.ship.x - this.baseX, -1, 1) * this.track * dt;
-    this.baseY += clamp(game.ship.y - this.baseY, -1, 1) * this.track * 0.45 * dt;
-    this.x = this.baseX + Math.sin(this.phase * this.swaySpeed + this.phase) * this.sway * 0.4;
-    this.y = this.baseY + Math.cos(this.phase * this.swaySpeed * 0.7) * 0.35;
-    this.x = clamp(this.x, -7.6, 7.6);
-    this.y = clamp(this.y, -5.4, 5.4);
+    // track the runner around the circumference of the tube
+    if (this.theta !== undefined) {
+      const target = game.theta ?? Math.atan2(game.ship.y, game.ship.x);
+      this.theta += clamp(angleDelta(target, this.theta), -1, 1) * this.track * 0.55 * dt;
+      this.theta += Math.sin(this.phase * this.swaySpeed) * this.sway * 0.05 * dt;
+      const r = TUBE_RADIUS - 2.2 + Math.sin(this.phase * 1.3) * 0.35;
+      this.x = Math.cos(this.theta) * r;
+      this.y = Math.sin(this.theta) * r;
+    } else {
+      this.baseX += clamp(game.ship.x - this.baseX, -1, 1) * this.track * dt;
+      this.baseY += clamp(game.ship.y - this.baseY, -1, 1) * this.track * 0.45 * dt;
+      this.x = this.baseX + Math.sin(this.phase * this.swaySpeed + this.phase) * this.sway * 0.4;
+      this.y = this.baseY + Math.cos(this.phase * this.swaySpeed * 0.7) * 0.35;
+      this.x = clamp(this.x, -7.6, 7.6);
+      this.y = clamp(this.y, -5.4, 5.4);
+    }
 
     this.group.lookAt(
       pathX(this.a) + game.ship.x,
@@ -782,3 +791,193 @@ export const PICKUP_INFO = {
   boost: { label: 'OVERDRIVE +', color: '#ff6ee7' },
   quantum: { label: 'TIME DILATION', color: '#ffc45e' },
 };
+
+// ============================================================================
+// Wall-mounted hazards for the mag-boot runner.
+// The runner sticks to the inside of the tube, so obstacles live on the wall:
+// they occupy an angular arc [thetaStart, thetaEnd] and a short axial slice.
+// ============================================================================
+
+function arcSectorGeometry(thetaStart, thetaLen, innerR, outerR, depth, curves = 0) {
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, outerR, thetaStart, thetaStart + thetaLen, false);
+  shape.absarc(0, 0, innerR, thetaStart + thetaLen, thetaStart, true);
+  shape.closePath();
+  const segments = curves || Math.max(10, Math.round(thetaLen * 26));
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: false,
+    curveSegments: segments,
+    steps: 1,
+  });
+  geo.translate(0, 0, -depth / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Split an arc into two capped pieces so the collision edge is never cubic. */
+export class ArcBarrier {
+  constructor(scene, { thetaStart, thetaLen, depth = 2.2, height = 1.25, energy = false, hp = Infinity, inside = false }) {
+    initShared();
+    this.kind = energy ? 'arcEnergy' : 'arc';
+    this.a = 0;
+    this.thetaStart = thetaStart;
+    this.thetaLen = thetaLen;
+    this.thetaEnd = thetaStart + thetaLen;
+    this.depth = depth;
+    this.height = height;
+    this.hp = energy ? Infinity : hp;
+    this.maxHp = this.hp;
+    this.score = energy ? 0 : 80;
+    this.energy = energy;
+    this.inside = inside;
+    this.dead = false;
+    this.passed = false;
+    this.hitPlayer = false;
+    this.phase = rand(0, TAU);
+    this.spin = rand(-0.1, 0.1);
+
+    const R = TUBE_RADIUS;
+    const innerR = R - height;
+    const outerR = R - 0.02;
+    this.innerR = innerR;
+    this.outerR = outerR;
+
+    this.group = new THREE.Group();
+
+    const plateMat = energy
+      ? new THREE.MeshBasicMaterial({
+          color: 0xff4fa8,
+          transparent: true,
+          opacity: 0.42,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          map: hexTexture('#ff3c8e'),
+        })
+      : new THREE.MeshStandardMaterial({
+          map: hazardTexture('#ff8a3d', '#241010'),
+          emissiveMap: hazardTexture('#ff8a3d', '#241010'),
+          emissive: 0xff7a2f,
+          emissiveIntensity: 1.15,
+          metalness: 0.55,
+          roughness: 0.5,
+          color: 0xbb9a8c,
+          side: THREE.DoubleSide,
+        });
+
+    const plate = new THREE.Mesh(arcSectorGeometry(thetaStart + 0.004, thetaLen - 0.008, innerR, outerR, depth), plateMat);
+    this.group.add(plate);
+    this.plate = plate;
+
+    // glowing rims at both ends of the arc
+    const rimMat = new THREE.MeshBasicMaterial({
+      color: energy ? 0xff7ac8 : 0xffb066,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      fog: false,
+    });
+    this.rimMat = rimMat;
+    const rimGeo = new THREE.TorusGeometry(R - 0.03, 0.05, 6, 28, thetaLen);
+    for (const z of [-depth / 2, depth / 2]) {
+      const rim = new THREE.Mesh(rimGeo, rimMat);
+      rim.rotation.z = thetaStart;
+      rim.position.z = z;
+      this.group.add(rim);
+    }
+    // inner lip
+    const lip = new THREE.Mesh(
+      new THREE.TorusGeometry(innerR + 0.02, 0.035, 4, 64, thetaLen),
+      rimMat
+    );
+    lip.rotation.z = thetaStart;
+    lip.position.z = depth / 2;
+    this.group.add(lip);
+    const lip2 = lip.clone();
+    lip2.position.z = -depth / 2;
+    this.group.add(lip2);
+
+    // spikes pointing into the tube
+    const spikeCount = Math.max(2, Math.round((thetaLen / (Math.PI * 2)) * 26));
+    const spikeGeo = new THREE.ConeGeometry(0.075, 0.36, 6);
+    const spikeMat = new THREE.MeshStandardMaterial({ color: 0x3a2a30, metalness: 0.8, roughness: 0.4 });
+    this.spikes = [];
+    for (let i = 0; i < spikeCount; i++) {
+      const t = thetaStart + ((i + 0.5) / spikeCount) * thetaLen;
+      const spike = new THREE.Mesh(spikeGeo, spikeMat);
+      spike.position.set(Math.cos(t) * (innerR + 0.16), Math.sin(t) * (innerR + 0.16), 0);
+      spike.rotation.z = t - Math.PI / 2;
+      spike.rotation.x = Math.PI; // point inward
+      this.group.add(spike);
+      this.spikes.push(spike);
+    }
+
+    // warning glow hovering just off the wall
+    this.halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glowTexture(energy ? '#ff3c8e' : '#ff7a2f'),
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        opacity: 0.22,
+      })
+    );
+    this.halo.scale.setScalar(Math.max(3, thetaLen * R * 0.7));
+    const mid = thetaStart + thetaLen * 0.5;
+    this.halo.position.set(Math.cos(mid) * (R - 0.6), Math.sin(mid) * (R - 0.6), 0);
+    this.group.add(this.halo);
+
+    scene.add(this.group);
+  }
+
+  update(dt, game) {
+    const pulse = 0.5 + 0.5 * Math.sin(game.time * 4 + this.phase);
+    this.rimMat.opacity = 0.65 + pulse * 0.35;
+    this.halo.material.opacity = 0.12 + pulse * 0.12;
+    if (this.energy) this.plate.material.opacity = 0.3 + pulse * 0.22;
+    if (this.hp !== Infinity && this.hp < this.maxHp) {
+      this.rimMat.color.setHex(this.hp <= 1 ? 0xff3355 : 0xffb066);
+    }
+  }
+
+  /** Does an angular position (plus body half-angle) touch this arc? */
+  hitsAngle(theta, halfAngle = 0.075) {
+    const rel = ((theta - this.thetaStart) % TAU + TAU) % TAU;
+    if (rel <= this.thetaLen) return true;
+    // wrap-around tolerance at both ends
+    const dStart = Math.min(rel, TAU - rel);
+    const dEnd = Math.min(Math.abs(rel - this.thetaLen), TAU - Math.abs(rel - this.thetaLen));
+    return Math.min(dStart, dEnd) < halfAngle;
+  }
+
+  hit(dmg, game, at) {
+    if (this.hp === Infinity) {
+      game.fx.hitSpark(at);
+      return 'blocked';
+    }
+    this.hp -= dmg;
+    game.fx.hitSpark(at, '#ffb066');
+    if (this.hp <= 0) {
+      this.dead = true;
+      return 'dead';
+    }
+    return 'hit';
+  }
+
+  dispose(scene) {
+    scene.remove(this.group);
+    this.group.traverse((o) => {
+      if (o.isMesh) {
+        o.geometry?.dispose?.();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => m.dispose());
+        }
+      }
+      if (o.isSprite) o.material?.dispose?.();
+    });
+  }
+}

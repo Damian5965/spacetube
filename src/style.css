@@ -1257,6 +1257,7 @@ kbd {
   backdrop-filter: blur(6px);
 }
 .touch-btn.fire { width: 88px; height: 88px; border-color: rgba(255, 69, 212, 0.4); color: #ffb5ec; }
+.touch-btn.leap { border-color: rgba(140, 255, 190, 0.4); color: #b7ffd4; }
 .touch-btn:active, .touch-btn.on { background: rgba(110, 243, 255, 0.2); box-shadow: 0 0 24px rgba(110, 243, 255, 0.4); }
 
 .rotate-hint {

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { glowTexture } from './textures.js';
 import { clamp, rand, TAU } from './util.js';
-import { pathX, pathY } from './path.js';
+import { pathX, pathY, TUBE_RADIUS, angleDelta } from './path.js';
 
 const _v = new THREE.Vector3();
 
@@ -160,10 +160,10 @@ export class Warden {
         opacity: 0.18,
       })
     );
-    this.halo.scale.setScalar(19);
+    this.halo.scale.setScalar(10);
     this.group.add(this.halo);
 
-    this.light = new THREE.PointLight(0xff365e, 16, 60, 2);
+    this.light = new THREE.PointLight(0xff365e, 5, 38, 2);
     this.group.add(this.light);
   }
 
@@ -202,12 +202,20 @@ export class Warden {
       return;
     }
 
-    // hover / strafe
-    const targetX = Math.sin(t * 0.62) * 3.9;
-    const targetY = Math.sin(t * 0.93 + 1.4) * 1.9;
+    // hover / strafe — the warden hangs against the wall like the runner, so
+    // forward fire at wall height can actually reach it
+    if (this.baseTheta === undefined || this.baseTheta === null) {
+      this.baseTheta = (this.theta ?? game.theta ?? 0) + 0.55;
+      // it holds a lane on the wall rather than hiding behind the runner
+      this.theta = this.baseTheta;
+    }
+    const sweep = this.baseTheta + Math.sin(t * 0.36) * 0.62;
+    const br = TUBE_RADIUS - 4.6 + Math.sin(t * 0.9) * 0.5;
+    const targetX = Math.cos(sweep) * br;
+    const targetY = Math.sin(sweep) * br;
     this.x += (targetX - this.x) * Math.min(1, dt * 2.2);
     this.y += (targetY - this.y) * Math.min(1, dt * 2.2);
-    this.a = game.traveled + 54;
+    this.a = game.traveled + 40;
     this.group.rotation.z = Math.sin(t * 0.5) * 0.12;
     this.group.rotation.x = Math.sin(t * 0.73) * 0.06;
     this.group.rotation.y = Math.sin(t * 0.37) * 0.1;
@@ -224,8 +232,8 @@ export class Warden {
     });
     this.lens.rotation.z += dt * 0.8;
     this.eye.scale.setScalar(7.4 + Math.sin(t * 3.2) * 0.55 + this.charging * 2.0);
-    this.halo.scale.setScalar(23 + Math.sin(t * 1.4) * 1.8);
-    this.light.intensity = 12 + Math.sin(t * 4) * 4 + this.charging * 20;
+    this.halo.scale.setScalar(11 + Math.sin(t * 1.4) * 0.9);
+    this.light.intensity = 5 + Math.sin(t * 4) * 1.6 + this.charging * 9;
 
     if (this.charging > 0) {
       this.charging -= dt;

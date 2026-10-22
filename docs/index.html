@@ -7,8 +7,8 @@
     <meta name="description" content="SpaceTube — a neon hyperspace tunnel runner. Dodge, blast and overdrive your way through the deep-space transit tube." />
     <title>SPACETUBE // hyperspace runner</title>
     <style>html,body{color:#e8f6ff;background:#04030b;margin:0}#render{background:#04030b;display:block;position:fixed;top:0;bottom:0;left:0;right:0}</style>
-    <script type="module" crossorigin src="./assets/index-SD1yOU77.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BTQyJ8zq.css">
+    <script type="module" crossorigin src="./assets/index-DZiFeISU.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CliSQjnw.css">
   </head>
   <body>
     <canvas id="render" aria-label="SpaceTube game viewport"></canvas>
@@ -45,7 +45,7 @@
 
         <div class="hud-block stats-block">
           <div class="stat-mini"><span class="k">DIST</span><span id="hud-distance" class="v">0 m</span></div>
-          <div class="stat-mini"><span class="k">VEL</span><span id="hud-speed" class="v">0 km/s</span></div>
+          <div class="stat-mini"><span class="k">SPEED</span><span id="hud-speed" class="v">0 km/h</span></div>
           <div class="stat-mini"><span class="k">BEST</span><span id="hud-best" class="v">0</span></div>
         </div>
       </header>
@@ -78,7 +78,7 @@
       <div class="hud-bottom">
         <div class="systems">
           <div class="system">
-            <div class="sys-head"><span class="sys-icon hull-ico">◈</span><span class="sys-name">HULL</span><span id="hull-num" class="sys-num">100</span></div>
+            <div class="sys-head"><span class="sys-icon hull-ico">◈</span><span class="sys-name">SUIT</span><span id="hull-num" class="sys-num">100</span></div>
             <div class="sys-track"><div id="hull-fill" class="sys-fill hull"></div></div>
           </div>
           <div class="system">
@@ -115,7 +115,7 @@
         <div class="boot-track"><div id="boot-bar" class="boot-bar"></div></div>
         <div class="boot-row"><span id="boot-status">initializing warp core…</span><span id="boot-pct">0%</span></div>
         <button id="boot-start" class="btn btn-ghost boot-enter hidden">ENTER THE TUBE</button>
-        <div class="boot-tip" id="boot-tip">TIP // near-misses charge overdrive</div>
+        <div class="boot-tip" id="boot-tip">TIP // a magnet leap clears a full ring of arcs</div>
       </div>
       <div class="boot-corner tl"></div><div class="boot-corner tr"></div>
       <div class="boot-corner bl"></div><div class="boot-corner br"></div>
@@ -130,17 +130,18 @@
           <span class="logo-line logo-sub">HYPERSPACE RUNNER</span>
         </h1>
         <p class="menu-blurb">
-          The transit tube is collapsing. Thread the wreckage, cut down the drones
-          and push your reactor past the red line. Every gate is another sector deeper.
+          Magnetic boots, one collapsing transit tube, no brakes. Run the whole
+          inside of the wall — floor, walls, ceiling — leap the live arcs and blast
+          the drones. Every gate is another sector deeper.
         </p>
 
         <div class="menu-actions">
           <button id="btn-start" class="btn btn-primary">
             <span class="btn-glint"></span>
-            <span class="btn-label">LAUNCH RUN</span>
+            <span class="btn-label">START RUN</span>
             <span class="btn-sub">ENTER</span>
           </button>
-          <button id="btn-how" class="btn btn-ghost">HOW TO FLY</button>
+          <button id="btn-how" class="btn btn-ghost">HOW TO RUN</button>
           <button id="btn-leader" class="btn btn-ghost">RECORDS</button>
         </div>
 
@@ -151,15 +152,15 @@
             <div class="record-s" id="menu-best-sub">no runs logged</div>
           </div>
           <div class="menu-controls-hint">
-            <div><kbd>WASD</kbd> / <kbd>◀▶</kbd> steer</div>
-            <div><kbd>SPACE</kbd> fire · <kbd>SHIFT</kbd> boost</div>
+            <div><kbd>A</kbd><kbd>D</kbd> / <kbd>◀▶</kbd> run around the tube</div>
+            <div><kbd>W</kbd> magnet leap · <kbd>SPACE</kbd> fire · <kbd>SHIFT</kbd> boost</div>
           </div>
         </div>
       </div>
 
       <aside class="menu-right">
         <div class="panel">
-          <div class="panel-title">FLIGHT CONFIG</div>
+          <div class="panel-title">SUIT CONFIG</div>
           <label class="setting">
             <span class="setting-k">Graphics</span>
             <select id="sel-quality">
@@ -184,7 +185,7 @@
         </div>
         <div class="panel panel-transmission">
           <div class="panel-title">INCOMING TRANSMISSION</div>
-          <p id="transmission-text">“Pilot, the tube is eating ships whole. Keep your hull above zero and the score does itself.”</p>
+          <p id="transmission-text">“Runner, the tube is collapsing. Your boots hold the wall, nothing else does. Keep the suit above zero and keep moving.”</p>
           <div class="tx-sign">— CONTROL, RELAY 7</div>
         </div>
       </aside>
@@ -200,39 +201,39 @@
     <section id="how" class="screen modal-screen hidden">
       <div class="modal">
         <div class="modal-head">
-          <h2>FLIGHT MANUAL</h2>
+          <h2>RUNNER MANUAL</h2>
           <button class="icon-btn" data-close="how">✕</button>
         </div>
         <div class="manual-grid">
           <div class="manual-card">
             <div class="manual-ico">⇄</div>
-            <h3>STEER</h3>
-            <p><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> slide across the tube. <kbd>W</kbd><kbd>S</kbd> / <kbd>↑</kbd><kbd>↓</kbd> change altitude. Arrow keys use analog fly-to steering.</p>
+            <h3>RUN THE WALL</h3>
+            <p>Your mag-boots stick to the tube wall. <kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> run all the way around the circumference — floor, sides, ceiling. Mouse or touch stick steers too.</p>
           </div>
           <div class="manual-card">
             <div class="manual-ico">✦</div>
-            <h3>FIRE</h3>
-            <p><kbd>SPACE</kbd> or <kbd>CLICK</kbd> fires full auto. Drones shatter into score. Collect <b class="c-cyan">ARC CELLS</b> to upgrade to twin, spread and lance fire.</p>
+            <h3>MAGNET LEAP</h3>
+            <p><kbd>W</kbd> / <kbd>↑</kbd> cuts the magnets and launches you off the wall for half a second — the only way over a full ring of live arcs. You land back on the tube automatically.</p>
           </div>
           <div class="manual-card">
             <div class="manual-ico">⟁</div>
-            <h3>OVERDRIVE</h3>
-            <p><kbd>SHIFT</kbd> drains the boost bar for triple speed and doubled score. Near-misses, combos and pickups recharge it. Never let it sit full.</p>
+            <h3>FIRE &amp; OVERDRIVE</h3>
+            <p><kbd>SPACE</kbd> or <kbd>CLICK</kbd> holds full auto forward. <kbd>SHIFT</kbd> drains overdrive for raw speed and doubled score. Near-misses, combos and cells recharge it.</p>
           </div>
           <div class="manual-card">
             <div class="manual-ico">⬡</div>
             <h3>SURVIVE</h3>
-            <p>Barriers cost hull. <b class="c-lime">REPAIR</b> cells restore it, <b class="c-magenta">SHIELD</b> absorbs one hit, <b class="c-amber">QUANTUM</b> slows time. Gates open between sectors.</p>
+            <p>Arc barriers and drones cost suit integrity. <b class="c-lime">REPAIR</b> cells restore it, <b class="c-magenta">SHIELD</b> absorbs one hit, <b class="c-amber">QUANTUM</b> slows time. Run through the gate to change sector.</p>
           </div>
           <div class="manual-card">
             <div class="manual-ico">☠</div>
             <h3>DRONES &amp; WARDENS</h3>
-            <p>A red glow means a drone is charging. Destroy it before it fires. At the end of a sector a <b class="c-red">WARDEN</b> guards the gate — break its armour, then fly the gap.</p>
+            <p>A red glow means a drone is charging. Destroy it before it fires. At the end of a sector a <b class="c-red">WARDEN</b> guards the gate — break its armour, then run the gap.</p>
           </div>
           <div class="manual-card">
             <div class="manual-ico">⚡</div>
             <h3>COMBOS</h3>
-            <p>Chain kills and pickups without taking a hit to grow the multiplier up to ×8. Hull damage resets the chain. Bank it before the next barrier field.</p>
+            <p>Chain kills, wall-slips and pickups without taking a hit to grow the multiplier up to ×8. Taking damage resets the chain. Bank it before the next arc field.</p>
           </div>
         </div>
         <div class="modal-foot">
@@ -246,7 +247,7 @@
     <section id="leader" class="screen modal-screen hidden">
       <div class="modal modal-narrow">
         <div class="modal-head">
-          <h2>FLIGHT RECORDS</h2>
+          <h2>RUN RECORDS</h2>
           <button class="icon-btn" data-close="leader">✕</button>
         </div>
         <div class="records">
@@ -299,7 +300,7 @@
       <div class="modal gameover-modal">
         <div class="go-head">
           <div class="go-kicker" id="go-kicker">RUN TERMINATED</div>
-          <h2 id="go-title">HULL BREACH</h2>
+          <h2 id="go-title">SUIT BREACH</h2>
           <div id="go-record" class="go-record hidden">◆ NEW PERSONAL BEST ◆</div>
         </div>
         <div class="go-score">
@@ -315,7 +316,7 @@
           <div><span>BEST SCORE</span><b id="go-best">0</b></div>
         </div>
         <div class="go-actions">
-          <button id="btn-retry" class="btn btn-primary">FLY AGAIN <span class="btn-sub">R</span></button>
+          <button id="btn-retry" class="btn btn-primary">RUN AGAIN <span class="btn-sub">R</span></button>
           <button id="btn-menu" class="btn btn-ghost">MAIN MENU</button>
         </div>
       </div>
@@ -325,6 +326,7 @@
     <div id="touch" class="touch hidden">
       <div id="stick" class="stick"><div class="stick-nub" id="stick-nub"></div></div>
       <div class="touch-right">
+        <button id="touch-leap" class="touch-btn leap">LEAP</button>
         <button id="touch-boost" class="touch-btn boost">BOOST</button>
         <button id="touch-fire" class="touch-btn fire">FIRE</button>
       </div>

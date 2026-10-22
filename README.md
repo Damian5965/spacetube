@@ -1,8 +1,10 @@
 # SPACETUBE
 
-A neon hyperspace tunnel runner built with **Three.js** and **Vite**. No external art:
-the tunnel, ships, drones, Warden bosses, planets, nebulae, textures and the whole
-soundtrack are generated procedurally in the browser.
+A neon hyperspace tunnel runner built with **Three.js** and **Vite**. You play a
+runner in magnetic boots: she sprints along the *inside* of the tube, all 360°
+around it, leaps off the wall to clear live arcs and shoots the drones down.
+No external art — the tunnel, the character, the drones, Warden bosses, planets,
+nebulae, textures and the whole soundtrack are generated procedurally in the browser.
 
 ```
 npm install
@@ -73,7 +75,7 @@ src/
   game.js       run state, spawner, collisions, scoring, camera
   tunnel.js     shader tube
   backdrop.js   stars, nebulae, gas giant, dust
-  ship.js       player interceptor + shield shader
+  runner.js     the mag-boot runner: procedural body, rig, animation, shield
   hazards.js    barriers, asteroids, drones, mines, pickups, gate
   boss.js       Warden boss + attack patterns
   projectiles.js pooled bolts

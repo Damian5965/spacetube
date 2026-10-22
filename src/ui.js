@@ -4,11 +4,12 @@ import { toScreen, fmtScore, fmtDistance, randomTip, clamp } from './util.js';
 const $ = (id) => document.getElementById(id);
 
 const TRANSMISSIONS = [
-  '“Pilot, the tube is eating ships whole. Keep your hull above zero and the score does itself.”',
+  '“Runner, the tube is collapsing. Your boots hold the wall — nothing else does. Keep the suit above zero.”',
   '“Warden signatures get louder every sector. If the core glows red, shoot it until it stops.”',
-  '“Reminder: the gate only opens for pilots who are still breathing. Fly accordingly.”',
-  '“We lost another courier at the Magenta Rift. His last words were ‘the stripes looked safe’.”',
+  '“Reminder: the gate only opens for runners who are still breathing. Run accordingly.”',
+  '“We lost another courier at the Magenta Rift. Last words: ‘the stripes looked safe.’”',
   '“Overdrive is not a suggestion. Near misses charge it. Use the danger.”',
+  '“A magnet leap clears a full ring of arcs. Mind the landing — the wall is the only floor you get.”',
 ];
 
 function setText(el, text) {
@@ -221,7 +222,7 @@ export class UI {
     setText($('go-drones'), String(stats.kills));
     setText($('go-best'), fmtScore(best));
     setText($('go-kicker'), stats.score >= best && isRecord ? 'RUN LOGGED · ARCHIVE UPDATED' : 'RUN TERMINATED');
-    setText($('go-title'), 'HULL BREACH');
+    setText($('go-title'), 'SUIT BREACH');
     $('go-record')?.classList.toggle('hidden', !isRecord);
     this.openScreen('gameover');
     this.hideTouch();
