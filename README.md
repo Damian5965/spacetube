@@ -6,10 +6,21 @@ soundtrack are generated procedurally in the browser.
 
 ```
 npm install
-npm run dev      # dev server → http://localhost:5173
-npm run build    # production build into dist/
-npm run preview  # serve the built game → http://localhost:4173
+npm run dev            # dev server (hot reload) → http://localhost:5173
+npm run build          # production build into dist/
+npm run preview:static # serve dist/ → http://localhost:5173
+npm run build:pages    # rebuild the docs/ bundle published on GitHub Pages
 ```
+
+### Play without a local setup
+
+- **Sandbox preview** — the static build is already served on port **5173**;
+  open the live preview panel.
+- **GitHub Pages** — the prebuilt game lives in `docs/`. One-time setup:
+  repository **Settings → Pages → Source: Deploy from a branch →
+  Branch `arena/dac131fc-spacetube`, folder `/docs` → Save**.
+  The game then lives at <https://damian5965.github.io/spacetube/>.
+  After any rebuild run `npm run build:pages` and commit `docs/`.
 
 No build step needed for playing in this workspace: the dev server is already
 running on port **5173** (open the live preview, or http://localhost:5173).
