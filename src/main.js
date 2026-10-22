@@ -467,7 +467,6 @@ window.addEventListener('resize', () => {
 
 // ------------------------------------------------------------- loop
 let last = performance.now();
-let bootedVisual = false;
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -475,12 +474,14 @@ function frame(now) {
   last = now;
   if (document.hidden) return;
 
+  // while the boot overlay is up there is nothing to animate and the shader
+  // warm-up would just steal frames from the loading bar
+  if (!bootDone) return;
+
   game.update(dt);
   const snap = game.getSnapshot();
   ui.updateHUD(snap, store.data.best);
   engine.render(dt);
-
-  if (!bootedVisual && bootDone) bootedVisual = true;
 }
 
 requestAnimationFrame(frame);

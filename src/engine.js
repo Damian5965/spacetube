@@ -157,8 +157,8 @@ export class Engine {
 
   pixelRatioFor(quality) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    if (quality === 'high') return Math.min(dpr, 2);
-    if (quality === 'medium') return Math.min(dpr, 1.5);
+    if (quality === 'high') return Math.min(dpr, 1.6);
+    if (quality === 'medium') return Math.min(dpr, 1.25);
     return 1;
   }
 
