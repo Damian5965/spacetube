@@ -6,7 +6,9 @@ import { defineConfig } from 'vite';
 const pages = process.env.GITHUB_PAGES === 'true';
 
 export default defineConfig({
-  base: pages ? '/spacetube/' : '/',
+  // relative base: the bundle works at any host/sub-path (GitHub Pages project
+  // sites, CDN mirrors, a folder opened over HTTP)
+  base: pages ? './' : '/',
   server: {
     host: '0.0.0.0',
     port: 5173,
