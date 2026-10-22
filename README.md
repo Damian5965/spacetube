@@ -6,9 +6,18 @@ soundtrack are generated procedurally in the browser.
 
 ```
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # static build in dist/
+npm run dev      # dev server → http://localhost:5173
+npm run build    # production build into dist/
+npm run preview  # serve the built game → http://localhost:4173
 ```
+
+No build step needed for playing in this workspace: the dev server is already
+running on port **5173** (open the live preview, or http://localhost:5173).
+
+If the page ever shows raw unstyled text, it means the stylesheet or the module
+bundle did not load — do a hard reload (`Ctrl` + `Shift` + `R` / `Cmd` + `Shift` + `R`).
+The UI is styled from `src/app.css`, which is linked directly from `index.html`,
+so it renders even before the JS bundle finishes.
 
 ## How to fly
 

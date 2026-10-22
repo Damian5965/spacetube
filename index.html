@@ -6,6 +6,12 @@
     <meta name="theme-color" content="#05040d" />
     <meta name="description" content="SpaceTube — a neon hyperspace tunnel runner. Dodge, blast and overdrive your way through the deep-space transit tube." />
     <title>SPACETUBE // hyperspace runner</title>
+    <link rel="stylesheet" href="/src/app.css" />
+    <style>
+      /* critical: never show a white flash before the stylesheet lands */
+      html, body { margin: 0; background: #04030b; color: #e8f6ff; }
+      #render { position: fixed; inset: 0; display: block; background: #04030b; }
+    </style>
   </head>
   <body>
     <canvas id="render" aria-label="SpaceTube game viewport"></canvas>
@@ -330,6 +336,33 @@
     <div id="rotate-hint" class="rotate-hint hidden">↻ rotate your device for a wider tube</div>
 
     <div id="toast" class="toast hidden"></div>
+
+    <noscript>
+      <div class="fallback">
+        <h1>SPACE<span class="slash">//</span>TUBE</h1>
+        <p>This game needs JavaScript and WebGL. Enable JavaScript, then reload the page.</p>
+      </div>
+    </noscript>
+
+    <div id="fatal" class="fallback hidden">
+      <h1>SPACE<span class="slash">//</span>TUBE</h1>
+      <p id="fatal-message">WebGL could not start on this device.</p>
+      <p class="fallback-sub">Try a recent Chrome, Edge, Firefox or Safari, enable hardware acceleration, then reload.</p>
+      <button class="btn btn-primary" onclick="location.reload()">RELOAD</button>
+    </div>
+
+    <script>
+      // If the module bundle never executes (blocked script, stale cache),
+      // surface a readable error instead of a half-styled page.
+      document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+          if (window.__stAppReady) return;
+          var status = document.getElementById('boot-status');
+          if (status) status.textContent = 'script stalled — hard reload (Ctrl+Shift+R)';
+          document.getElementById('fatal')?.classList.remove('hidden');
+        }, 12000);
+      });
+    </script>
 
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -3,9 +3,10 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "SpaceTube — a neon hyperspace tunnel runner built with Three.js",
+  "description": "SpaceTube \u2014 a neon hyperspace tunnel runner built with Three.js",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "start": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },

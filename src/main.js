@@ -1,12 +1,5 @@
 // Bootstrap: input, settings, screen flow and the render loop.
-import '@fontsource/orbitron/500.css';
-import '@fontsource/orbitron/700.css';
-import '@fontsource/orbitron/900.css';
-import '@fontsource/rajdhani/400.css';
-import '@fontsource/rajdhani/600.css';
-import '@fontsource/rajdhani/700.css';
-import './style.css';
-
+// Styles live in src/app.css and are linked from index.html.
 import { Engine } from './engine.js';
 import { AudioEngine } from './audio.js';
 import { UI } from './ui.js';
@@ -15,7 +8,26 @@ import { store } from './storage.js';
 import { clamp, isTouch } from './util.js';
 
 const canvas = document.getElementById('render');
-const engine = new Engine(canvas);
+window.__stAppReady = true;
+
+function showFatal(message) {
+  const box = document.getElementById('fatal');
+  const msg = document.getElementById('fatal-message');
+  if (msg && message) msg.textContent = message;
+  box?.classList.remove('hidden');
+  document.getElementById('boot')?.classList.add('hidden');
+  document.getElementById('menu')?.classList.add('hidden');
+  document.getElementById('hud')?.classList.add('hidden');
+}
+
+let engine;
+try {
+  engine = new Engine(canvas);
+} catch (err) {
+  console.error('[spacetube] WebGL init failed', err);
+  showFatal('WebGL could not start on this device.');
+  throw err;
+}
 const audio = new AudioEngine();
 const touchDevice = isTouch();
 
@@ -201,6 +213,7 @@ function enterMenu() {
   audio.setVolume(store.data.settings.volume / 100);
   audio.setIntensity(0);
   ui.hideBoot();
+  document.getElementById('fatal')?.classList.add('hidden');
   ui.showMenu();
   game.enterAttract();
   applySettings();
