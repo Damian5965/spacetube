@@ -1,6 +1,12 @@
 import { defineConfig } from 'vite';
 
+// GitHub Pages serves project sites from a sub-path, so the Pages build needs
+// the repository name as base and writes straight into docs/. Local dev,
+// preview and the default build stay at the site root.
+const pages = process.env.GITHUB_PAGES === 'true';
+
 export default defineConfig({
+  base: pages ? '/spacetube/' : '/',
   server: {
     host: '0.0.0.0',
     port: 5173,
@@ -15,5 +21,7 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
+    outDir: pages ? 'docs' : 'dist',
+    emptyOutDir: true,
   },
 });
