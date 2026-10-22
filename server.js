@@ -5,7 +5,11 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(fileURLToPath(new URL('./dist', import.meta.url)));
+// Prefer a fresh build, fall back to the committed Pages bundle so the preview
+// keeps working even in a clean checkout without `npm run build`.
+const distRoot = resolve(fileURLToPath(new URL('./dist', import.meta.url)));
+const docsRoot = resolve(fileURLToPath(new URL('./docs', import.meta.url)));
+const root = existsSync(distRoot) ? distRoot : docsRoot;
 const port = Number(process.env.PORT || 5173);
 const host = process.env.HOST || '0.0.0.0';
 
@@ -45,8 +49,8 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   let pathname = decodeURIComponent(url.pathname);
 
-  if (!existsSync(root)) {
-    send(res, 500, '<h1>dist/ is missing</h1><p>Run <code>npm run build</code> first.</p>', {
+  if (!existsSync(join(root, 'index.html'))) {
+    send(res, 500, '<h1>No build found</h1><p>Run <code>npm run build</code> first.</p>', {
       'Content-Type': 'text/html; charset=utf-8',
     });
     return;
