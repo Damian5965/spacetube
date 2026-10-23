@@ -688,8 +688,8 @@ export class Runner {
       // muzzle flash pops for a moment after each shot
       const fl = this.flashTimer[i] || 0;
       arm.flash.material.opacity = fl > 0 ? Math.min(1, fl * 9) : 0;
-      arm.flash.scale.setScalar(0.24 + fl * 0.42);
-      if (fl > 0) this.flashTimer[i] = Math.max(0, fl - dt * 6);
+      arm.flash.scale.setScalar(0.26 + fl * 0.55);
+      if (fl > 0) this.flashTimer[i] = Math.max(0, fl - dt * 4.2);
     });
 
     // torso lean into the run and into turns
