@@ -1,17 +1,28 @@
 # SPACETUBE
 
-A neon hyperspace tunnel runner built with **Three.js** and **Vite**. You play a
-runner in magnetic boots: she sprints along the *inside* of the tube, all 360°
-around it, leaps off the wall to clear live arcs and shoots the drones down.
+A tunnel runner built with **Three.js** and **Vite**. You play a runner in
+magnetic boots: she sprints along the *inside* of the tube, all 360° around it,
+leaps off the wall to clear live arcs and shoots the drones down.
 No external art — the tunnel, the character, the drones, Warden bosses, planets,
-nebulae, textures and the whole soundtrack are generated procedurally in the browser.
+nebulae, textures and the whole soundtrack are generated procedurally.
+
+## Two versions, two links
+
+| Version | Link (GitHub Pages) | Look |
+| --- | --- | --- |
+| **v1 — Neon Runner** (frozen) | `…/spacetube/v1/` | holographic blue hyperspace tube |
+| **v2 — Industrial Tube** (current) | `…/spacetube/v2/` | corrugated steel corridor, ring frames, windows into space, spider drones |
+
+The Pages root (`…/spacetube/`) is a chooser page for both. `docs/v1/` is a
+frozen snapshot and is never rebuilt; `npm run build:pages` only regenerates
+`docs/v2/` plus the chooser.
 
 ```
 npm install
 npm run dev            # dev server (hot reload) → http://localhost:5173
 npm run build          # production build into dist/
 npm run preview:static # serve dist/ → http://localhost:5173
-npm run build:pages    # rebuild the docs/ bundle published on GitHub Pages
+npm run build:pages    # rebuild docs/v2/ + the version chooser
 ```
 
 ### Play without a local setup
@@ -73,7 +84,8 @@ Arrow keys and the mouse use analog fly-to steering; `WASD` is direct thrust.
 src/
   main.js       bootstrap, input, screen flow, render loop
   game.js       run state, spawner, collisions, scoring, camera
-  tunnel.js     shader tube
+  hull.js       v2 industrial corridor (instanced steel, lamps, windows)
+  tunnel.js     v1 shader tube (kept for reference)
   backdrop.js   stars, nebulae, gas giant, dust
   runner.js     the mag-boot runner: procedural body, rig, animation, shield
   hazards.js    barriers, asteroids, drones, mines, pickups, gate

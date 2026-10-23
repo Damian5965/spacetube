@@ -5,11 +5,13 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Prefer a fresh build, fall back to the committed Pages bundle so the preview
-// keeps working even in a clean checkout without `npm run build`.
+// Prefer a fresh build, then the committed v2 Pages bundle, then the v1 one,
+// so the preview keeps working even in a clean checkout without a build.
 const distRoot = resolve(fileURLToPath(new URL('./dist', import.meta.url)));
-const docsRoot = resolve(fileURLToPath(new URL('./docs', import.meta.url)));
-const root = existsSync(distRoot) ? distRoot : docsRoot;
+const v2Root = resolve(fileURLToPath(new URL('./docs/v2', import.meta.url)));
+const v1Root = resolve(fileURLToPath(new URL('./docs/v1', import.meta.url)));
+const root = [distRoot, v2Root, v1Root].find((p) => existsSync(p) && existsSync(join(p, 'index.html'))) ||
+  resolve(fileURLToPath(new URL('./docs', import.meta.url)));
 const port = Number(process.env.PORT || 5173);
 const host = process.env.HOST || '0.0.0.0';
 
