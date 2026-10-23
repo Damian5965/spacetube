@@ -129,9 +129,8 @@ function buildModule() {
   }
 
   // --- hazard band painted around the frame ----------------------------
-  const band = new THREE.CylinderGeometry(R - 0.2, R - 0.2, 0.62, 64, 1, true);
-  band.rotateX(Math.PI / 2);
-  band.translate(0, 0, -0.95);
+  const band = new THREE.TorusGeometry(R - 0.3, 0.11, 6, 64);
+  band.translate(0, 0, -0.62);
   hazard.push(band);
 
   return {
@@ -171,8 +170,10 @@ export class Hull {
       envMapIntensity: 1.35,
     });
 
+    const stripes = hazardStripeTexture();
+    stripes.repeat.set(9, 1);
     this.hazardMat = new THREE.MeshStandardMaterial({
-      map: hazardStripeTexture(),
+      map: stripes,
       metalness: 0.3,
       roughness: 0.78,
       color: 0x8f8f8f,

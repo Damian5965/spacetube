@@ -186,7 +186,7 @@ class Shockwaves {
   constructor(scene, count = 14) {
     this.items = [];
     this.scene = scene;
-    const geo = new THREE.RingGeometry(0.82, 1.0, 96);
+    const geo = new THREE.RingGeometry(0.93, 1.0, 96);
     for (let i = 0; i < count; i++) {
       const mat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
@@ -214,7 +214,7 @@ class Shockwaves {
     it.mesh.position.copy(pos);
     it.mesh.scale.setScalar(0.4);
     it.mat.color.set(color);
-    it.mat.opacity = 0.85;
+    it.mat.opacity = 0.5;
     it.life = life;
     it.maxLife = life;
     it.size = size;
@@ -236,7 +236,7 @@ class Shockwaves {
       const t = 1 - it.life / it.maxLife;
       const e = easeOutCubic(t);
       it.mesh.scale.setScalar(0.4 + e * it.size);
-      it.mat.opacity = (1 - t) * 0.9;
+      it.mat.opacity = (1 - t) * 0.55;
       if (it.facing === 'camera') it.mesh.quaternion.copy(camera.quaternion);
     }
   }
@@ -286,8 +286,8 @@ export class FX {
       spread: 0.4,
       drag: 2.4,
     });
-    this.shockwaves.spawn(pos, color, 6 * scale, 0.5);
-    this.shockwaves.spawn(pos, '#ffffff', 3 * scale, 0.28);
+    this.shockwaves.spawn(pos, color, 1.6 * scale, 0.4);
+    this.shockwaves.spawn(pos, '#ffffff', 0.9 * scale, 0.22);
     this.flash.position.copy(pos);
     this.flash.color.set(color);
     this.flash.intensity = Math.min(40, 12 * scale);
@@ -302,7 +302,7 @@ export class FX {
       spread: 0.3,
       drag: 1.8,
     });
-    this.shockwaves.spawn(pos, color, big ? 3.2 : 1.7, 0.34);
+    this.shockwaves.spawn(pos, color, big ? 1.3 : 0.7, 0.28);
   }
 
   hitSpark(pos, color = '#ffcf8a') {

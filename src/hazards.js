@@ -582,31 +582,61 @@ export class Mine {
     this.nearMissed = false;
     this.phase = rand(0, TAU);
     this.group = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), shared.mineMat);
+    // --- star shuriken: four spiked blades with a red cross on the face ---
+    const bladeMat = shared.mineMat;
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), bladeMat);
+    core.scale.set(1, 1, 0.62);
     this.group.add(core);
-    for (let i = 0; i < 6; i++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.75, 5), shared.mineMat);
-      const theta = (i / 6) * TAU;
-      spike.position.set(Math.cos(theta) * 0.6, Math.sin(theta) * 0.6, 0);
-      spike.rotation.z = theta - Math.PI / 2;
-      this.group.add(spike);
+
+    // four long blades, each a stretched pyramid, so it reads as a throwing star
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + Math.PI / 4;
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.5, 4), bladeMat);
+      blade.position.set(Math.cos(a) * 0.78, Math.sin(a) * 0.78, 0);
+      blade.rotation.z = a - Math.PI / 2;
+      blade.rotation.x = Math.PI / 2;
+      blade.scale.set(1, 1, 0.45);
+      this.group.add(blade);
+
+      // barb near the base of each blade
+      const barb = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.42, 4), bladeMat);
+      barb.position.set(Math.cos(a + 0.5) * 0.42, Math.sin(a + 0.5) * 0.42, 0);
+      barb.rotation.z = a + 0.5;
+      this.group.add(barb);
     }
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.035, 4, 48), shared.mineGlowMat);
+
+    // red cross on the face, exactly like the concept art
+    const crossMat = new THREE.MeshBasicMaterial({ color: 0xff2a12 });
+    for (let i = 0; i < 2; i++) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 0.06), crossMat);
+      bar.rotation.z = (i * Math.PI) / 2;
+      bar.position.z = -0.32;
+      this.group.add(bar);
+    }
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.22, 12), bladeMat);
+    hub.rotation.x = Math.PI / 2;
+    hub.position.z = -0.26;
+    this.group.add(hub);
+    this.crossMat = crossMat;
+
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.022, 4, 44), shared.mineGlowMat);
     this.group.add(ring);
-    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.02, 4, 40), shared.mineGlowMat);
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.016, 4, 36), shared.mineGlowMat);
     ring2.rotation.x = Math.PI / 2;
     this.group.add(ring2);
     this.rings = [ring, ring2];
+
     const glow = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: glowTexture('#ff3d6b'),
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
-        opacity: 0.5,
+        opacity: 0.45,
       })
     );
-    glow.scale.setScalar(2.4);
+    glow.scale.setScalar(2.6);
+    glow.position.z = -0.2;
     this.group.add(glow);
     this.glow = glow;
     scene.add(this.group);
@@ -616,7 +646,11 @@ export class Mine {
     this.group.rotation.z += dt * 1.4;
     this.rings[1].rotation.z -= dt * 2.2;
     const pulse = 1 + Math.sin(game.time * 5 + this.phase) * 0.08;
-    this.glow.scale.setScalar(2.4 * pulse);
+    this.glow.scale.setScalar(2.5 * pulse);
+    if (this.crossMat) {
+      const hot = 0.55 + 0.45 * Math.pow(Math.max(0, Math.sin(game.time * 3 + this.phase)), 4);
+      this.crossMat.color.setRGB(0.65 + hot * 0.35, 0.08 + hot * 0.1, 0.05);
+    }
   }
 
   hit(dmg, game, at) {
