@@ -101,7 +101,7 @@ export class Engine {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.toneMappingExposure = 0.96;
     this.renderer.setClearColor(0x030211, 1);
     this.renderer.info.autoReset = true;
 
@@ -113,17 +113,17 @@ export class Engine {
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const envScene = new RoomEnvironment();
     this.scene.environment = pmrem.fromScene(envScene, 0.04).texture;
-    this.scene.environmentIntensity = 0.6;
+    this.scene.environmentIntensity = 0.45;
     pmrem.dispose();
 
     // lights: cool key from above, warm rim from behind so metal reads
-    this.keyLight = new THREE.DirectionalLight(0xffe6c0, 2.1);
+    this.keyLight = new THREE.DirectionalLight(0xffe6c0, 1.6);
     this.keyLight.position.set(6, 9, 7);
     this.scene.add(this.keyLight);
-    this.rimLight = new THREE.DirectionalLight(0xff6a3a, 1.5);
+    this.rimLight = new THREE.DirectionalLight(0xff6a3a, 1.25);
     this.rimLight.position.set(-7, -3, -8);
     this.scene.add(this.rimLight);
-    this.fillLight = new THREE.DirectionalLight(0x8fa6c8, 0.8);
+    this.fillLight = new THREE.DirectionalLight(0x8fa6c8, 0.5);
     this.fillLight.position.set(-4, 5, -2);
     this.scene.add(this.fillLight);
 
@@ -185,9 +185,9 @@ export class Engine {
       this.composer.setSize(this.width, this.height);
     }
     if (this.bloom) {
-      this.bloom.strength = quality === 'high' ? 0.5 : 0.42;
+      this.bloom.strength = quality === 'high' ? 0.44 : 0.36;
       this.bloom.radius = quality === 'high' ? 0.4 : 0.34;
-      this.bloom.threshold = 1.0;
+      this.bloom.threshold = 1.12;
     }
     if (this.finish) {
       this.finish.uniforms.uGrain.value = quality === 'low' ? 0.012 : 0.02;

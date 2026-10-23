@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TUBE_RADIUS, pathX, pathY } from './path.js';
-import { hullTextures, hazardStripeTexture, glowTexture } from './textures.js';
+import { hullTextures, hazardStripeTexture, glowTexture, decalTexture } from './textures.js';
 import { clamp, TAU } from './util.js';
 
 const SEG = 6.2;
@@ -25,11 +25,26 @@ const STRINGERS = [0.85, 2.05, 3.3, 4.55];
 const LAMPS = [1.05, 3.15, 5.35];
 const BEACONS = [2.05, 4.7];
 const PIPES = [0.35, 2.6, 4.95];
+const GUIDE_RAILS = [1.45, 4.4];
 
 /** Box laid flat against the wall at the given angle. */
 function wallBox(w, h, d, angle, radius, z, out = []) {
   const g = new THREE.BoxGeometry(w, h, d);
   g.rotateZ(angle + Math.PI / 2);
+  g.translate(Math.cos(angle) * radius, Math.sin(angle) * radius, z);
+  out.push(g);
+  return out;
+}
+
+/** Flat quad laid on the wall, facing the tube axis. */
+function wallQuad(w, h, angle, radius, z, out = []) {
+  const g = new THREE.PlaneGeometry(w, h);
+  const basis = new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0),
+    new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(-Math.cos(angle), -Math.sin(angle), 0)
+  );
+  g.applyMatrix4(basis);
   g.translate(Math.cos(angle) * radius, Math.sin(angle) * radius, z);
   out.push(g);
   return out;
@@ -41,6 +56,7 @@ function buildModule() {
   const beacon = [];
   const hazard = [];
   const glass = [];
+  const decal = [];
 
   // --- corrugated wall panel with a viewing window ----------------------
   // The window sits on the -X side of the module; instance rotation swings it
@@ -133,7 +149,63 @@ function buildModule() {
   band.translate(0, 0, -0.62);
   hazard.push(band);
 
+  // diagonal warning panels on the frame face, like the reference art
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU + 0.18;
+    const panelGeo = new THREE.BoxGeometry(0.62, 0.06, 0.72);
+    panelGeo.rotateZ(a + Math.PI / 2);
+    panelGeo.translate(Math.cos(a) * (R - 0.52), Math.sin(a) * (R - 0.52), -0.62);
+    hazard.push(panelGeo);
+  }
+
+  // --- wall greebles: vents, junction boxes, cable trays ---------------
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU + 0.55;
+    // vent grille
+    wallBox(0.62, 0.1, 1.1, a, R - 0.11, -2.1, metal);
+    for (let k = 0; k < 5; k++) {
+      const v = new THREE.BoxGeometry(0.4, 0.05, 0.06);
+      v.rotateZ(a + Math.PI / 2);
+      v.translate(Math.cos(a) * (R - 0.17), Math.sin(a) * (R - 0.17), -2.1 + (k - 2) * 0.2);
+      metal.push(v);
+    }
+    // junction box
+    wallBox(0.5, 0.34, 0.42, a + 0.42, R - 0.24, -4.35, metal);
+    wallBox(0.2, 0.06, 0.1, a + 0.42, R - 0.46, -4.35, beacon);
+  }
+
+  // cable bundles sagging between the frames
+  for (const a of [0.62, 3.9]) {
+    for (let k = 0; k < 3; k++) {
+      const cable = new THREE.TorusGeometry(1.6, 0.035, 5, 10, Math.PI * 0.72);
+      cable.rotateZ(a + 0.2 + k * 0.05);
+      cable.translate(Math.cos(a) * (R - 0.34 - k * 0.05), Math.sin(a) * (R - 0.34 - k * 0.05), -3.1);
+      metal.push(cable);
+    }
+  }
+
+  // --- glowing guide strip running the length of the tunnel ------------
+  // (the neon hook from v1, translated into an industrial light rail)
+  for (const a of GUIDE_RAILS) {
+    const rail = new THREE.BoxGeometry(0.1, 0.07, SEG - 0.35);
+    rail.rotateZ(a + Math.PI / 2);
+    rail.translate(Math.cos(a) * (R - 0.3), Math.sin(a) * (R - 0.3), -SEG / 2);
+    glow.push(rail);
+  }
+
+  // --- painted stencils on the wall (sector number, caution bar, arrow) ---
+  const DECALS = [
+    [0.95, -1.35, 1.05],
+    [2.55, -3.5, 0.85],
+    [4.5, -5.05, 0.95],
+    [5.55, -2.35, 0.7],
+  ];
+  for (const [a, z, size] of DECALS) {
+    wallQuad(size, size, a, R - 0.035, z, decal);
+  }
+
   return {
+    decal: mergeGeometries(decal, false),
     metal: mergeGeometries(metal, false),
     glow: mergeGeometries(glow, false),
     beacon: mergeGeometries(beacon, false),
@@ -165,7 +237,7 @@ export class Hull {
       color: 0xb0b6be,
       emissive: 0x1a1408,
       emissiveMap: tex.map,
-      emissiveIntensity: 0.5,
+      emissiveIntensity: 0.3,
       side: THREE.DoubleSide,
       envMapIntensity: 1.35,
     });
@@ -194,7 +266,20 @@ export class Hull {
       emissiveIntensity: 0.6,
       depthWrite: false,
     });
+    this.decalMat = new THREE.MeshStandardMaterial({
+      map: decalTexture(),
+      transparent: true,
+      opacity: 0.82,
+      color: 0xb9c0c6,
+      roughness: 0.9,
+      metalness: 0.05,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
     this.lampMat = new THREE.MeshBasicMaterial({ color: 0xfff0c4 });
+    this.railMat = new THREE.MeshBasicMaterial({ color: 0x66e2ff });
     this.beaconMat = new THREE.MeshBasicMaterial({ color: 0xff2a12, toneMapped: false });
 
     const geo = buildModule();
@@ -215,6 +300,9 @@ export class Hull {
     this.beacons = make(geo.beacon, this.beaconMat, 'hull-beacons');
     this.hazard = make(geo.hazard, this.hazardMat, 'hull-hazard');
     this.glass = make(geo.glass, this.glassMat, 'hull-glass');
+    this.rails = make(geo.glow, this.railMat, 'hull-rails');
+    this.decals = make(geo.decal, this.decalMat, 'hull-decals');
+    this.decals.renderOrder = 1;
     this.glass.renderOrder = 2;
 
     // warm haze deep down the tunnel: the classic "there is a light at the end"
@@ -229,7 +317,7 @@ export class Hull {
         toneMapped: false,
       })
     );
-    this.farGlow.scale.setScalar(64);
+    this.farGlow.scale.setScalar(38);
     this.group.add(this.farGlow);
 
     // a couple of real lights travel with the camera so metal has highlights
@@ -286,6 +374,7 @@ export class Hull {
       this.lamps.setMatrixAt(i, _m);
       this.beacons.setMatrixAt(i, _m);
       this.glass.setMatrixAt(i, _m);
+      this.decals.setMatrixAt(i, _m);
       // hazard bands only on every third joint
       if (i % 4 === 0) this.hazard.setMatrixAt(i, _m);
       else {
@@ -298,6 +387,7 @@ export class Hull {
     this.beacons.instanceMatrix.needsUpdate = true;
     this.hazard.instanceMatrix.needsUpdate = true;
     this.glass.instanceMatrix.needsUpdate = true;
+    this.decals.instanceMatrix.needsUpdate = true;
 
     // lamps flicker a little, brighten with boost / impulses
     const t = time;
@@ -308,20 +398,22 @@ export class Hull {
     // beacons pulse like the ones in the reference art
     const pulse = 0.55 + 0.45 * Math.pow(Math.max(0, Math.sin(t * 2.4)), 6);
     this.beaconMat.color.setHex(0xff2a12).multiplyScalar(0.35 + pulse * 1.3);
+    const railCol = this.palette.rail ?? 0x66e2ff;
+    this.railMat.color.setHex(railCol).multiplyScalar(0.9 + this.pulse * 0.8 + (boost || 0) * 0.5);
 
     // far haze follows the tunnel ahead of the camera
     const glowA = traveled + 150;
     this.farGlow.position.set(pathX(glowA), pathY(glowA), -150);
-    this.farGlow.material.opacity = 0.22 + Math.sin(t * 0.8) * 0.04 + this.gateWarmth * 0.2;
+    this.farGlow.material.opacity = 0.1 + Math.sin(t * 0.8) * 0.02 + this.gateWarmth * 0.12;
 
     // travelling lights sit just behind/above the runner
-    const backA = traveled - 2.5;
+    const backA = traveled - 3.2;
     this.runLight.position.set(
-      pathX(backA) + Math.cos(this.runnerTheta) * (R - 2.4),
-      pathY(backA) + Math.sin(this.runnerTheta) * (R - 2.4),
-      2.5
+      pathX(backA) + Math.cos(this.runnerTheta) * (R - 3.2),
+      pathY(backA) + Math.sin(this.runnerTheta) * (R - 3.2),
+      3.2
     );
-    this.runLight.intensity = 20 + this.pulse * 30 + this.gateWarmth * 20;
+    this.runLight.intensity = 15 + this.pulse * 22 + this.gateWarmth * 16;
     const beaconA = traveled + 26;
     this.beaconLight.position.set(
       pathX(beaconA) + Math.cos(this.runnerTheta + 0.7) * (R - 1.2),

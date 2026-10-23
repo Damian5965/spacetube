@@ -117,7 +117,7 @@ export class Bullets {
     this.pendingLimit = true;
   }
 
-  firePlayer(a, x, y, level = 1) {
+  firePlayer(a, x, y, level = 1, ax = 0, ay = 0) {
     if (this.playerPool.active.length >= MAX_PLAYER) return;
     const shots =
       level >= 3
@@ -137,8 +137,8 @@ export class Bullets {
       b.a = a;
       b.x = x + s.x;
       b.y = y;
-      b.vx = s.vx + rand(-0.15, 0.15);
-      b.vy = rand(-0.1, 0.1);
+      b.vx = s.vx + ax + rand(-0.15, 0.15);
+      b.vy = ay + rand(-0.1, 0.1);
       b.va = 168;
       b.damage = 1;
       b.maxAhead = 260;

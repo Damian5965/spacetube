@@ -11,6 +11,8 @@ import { WALL_RADIUS } from './path.js';
 import { clamp, damp, lerp, rand, TAU } from './util.js';
 
 const FOOT_OFFSET = 0.0; // soles sit exactly on the wall
+const AIM_SHOULDER = 1.26; // arm forward when firing
+const AIM_ELBOW = 0.34;
 const UP = new THREE.Vector3(0, 1, 0);
 const FORWARD = new THREE.Vector3(0, 0, -1);
 
@@ -51,6 +53,9 @@ export class Runner {
     this.footIndex = 0;
     this.lastFootPhase = 0;
     this.onFootstep = null;
+    this.aim = 0;
+    this.firing = false;
+    this.flashTimer = [0, 0];
     this.custom = null;
     this.mixer = null;
     this.customReady = false;
@@ -70,20 +75,25 @@ export class Runner {
 
   // ------------------------------------------------------------------ look
   buildMaterials(palette) {
-    const accent = new THREE.Color(palette.tubeB);
+    const accent = new THREE.Color(palette.rail ?? palette.tubeB);
     const glow = new THREE.Color(palette.glow);
     this.accent = accent;
     this.glowColor = glow;
 
     this.mat = {
-      suit: capsuleMaterial(0x46536e, { roughness: 0.74, metalness: 0.06 }),
+      suit: capsuleMaterial(0x2a2f3a, { roughness: 0.72, metalness: 0.15 }),
+      under: capsuleMaterial(0x1a1d24, { roughness: 0.82, metalness: 0.1 }),
+      armour: capsuleMaterial(0xc25f1c, { roughness: 0.52, metalness: 0.4 }),
+      armourDark: capsuleMaterial(0x22262e, { roughness: 0.42, metalness: 0.7 }),
+      steel: capsuleMaterial(0x9aa2ad, { roughness: 0.3, metalness: 0.92 }),
       suitLight: capsuleMaterial(0x9aabc4, { roughness: 0.65, metalness: 0.08 }),
-      suitDark: capsuleMaterial(0x151b28, { roughness: 0.55, metalness: 0.42 }),
+      suitDark: capsuleMaterial(0x151b28, { roughness: 0.72, metalness: 0.18 }),
+      pack: capsuleMaterial(0x262b34, { roughness: 0.8, metalness: 0.2 }),
       jacket: capsuleMaterial(0x222c40, { roughness: 0.48, metalness: 0.32 }),
       trim: new THREE.MeshStandardMaterial({
         color: accent,
         emissive: accent,
-        emissiveIntensity: 1.9,
+        emissiveIntensity: 1.0,
         roughness: 0.35,
         metalness: 0.2,
       }),
@@ -96,7 +106,7 @@ export class Runner {
       bootSole: new THREE.MeshStandardMaterial({
         color: glow,
         emissive: glow,
-        emissiveIntensity: 2.6,
+        emissiveIntensity: 1.35,
         roughness: 0.3,
         metalness: 0.6,
       }),
@@ -108,10 +118,12 @@ export class Runner {
         emissiveIntensity: 0.35,
       }),
       dark: capsuleMaterial(0x101724, { roughness: 0.6, metalness: 0.3 }),
+      weapon: capsuleMaterial(0x2b3242, { roughness: 0.38, metalness: 0.85 }),
+      weaponDark: capsuleMaterial(0x11151f, { roughness: 0.3, metalness: 0.9 }),
       glowMid: new THREE.MeshStandardMaterial({
         color: accent,
         emissive: accent,
-        emissiveIntensity: 1.05,
+        emissiveIntensity: 0.85,
         roughness: 0.4,
         metalness: 0.2,
       }),
@@ -133,13 +145,13 @@ export class Runner {
     this.hips.position.y = 0.94;
     this.rig.add(this.hips);
 
-    const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.168, 18, 14), M.suitDark);
+    const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.168, 18, 14), M.under);
     pelvis.scale.set(1.1, 0.8, 0.92);
     this.hips.add(pelvis);
 
     // light hip plates read as armoured shorts
     for (const side of [-1, 1]) {
-      const plate = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), M.suitLight);
+      const plate = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), M.armour);
       plate.scale.set(0.72, 0.66, 0.8);
       plate.position.set(side * 0.135, 0.015, -0.015);
       this.hips.add(plate);
@@ -164,7 +176,7 @@ export class Runner {
       [0.148, 0.4],
       [0.108, 0.44],
     ].map(([r, y]) => new THREE.Vector2(r, y));
-    const body = new THREE.Mesh(new THREE.LatheGeometry(profile, 22), M.jacket);
+    const body = new THREE.Mesh(new THREE.LatheGeometry(profile, 22), M.under);
     body.castShadow = false;
     this.torso.add(body);
 
@@ -175,10 +187,17 @@ export class Runner {
     this.torso.add(yoke);
 
     // light chest panel + glow seams
-    const plate = new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 12), M.suit);
-    plate.scale.set(0.92, 0.86, 0.5);
+    const plate = new THREE.Mesh(new THREE.SphereGeometry(0.118, 16, 12), M.armour);
+    plate.scale.set(0.95, 0.8, 0.5);
     plate.position.set(0, 0.27, -0.085);
     this.torso.add(plate);
+    // collar bone plates
+    for (const side of [-1, 1]) {
+      const cp = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.1), M.armour);
+      cp.position.set(side * 0.075, 0.375, -0.055);
+      cp.rotation.z = side * 0.22;
+      this.torso.add(cp);
+    }
 
     const zip = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.34, 0.014), M.trim);
     zip.position.set(0, 0.2, -0.135);
@@ -204,11 +223,11 @@ export class Runner {
       shoulder.position.set(side * 0.156, 0.4, 0);
       this.torso.add(shoulder);
 
-      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), M.suitDark);
-      pad.scale.set(1.05, 0.95, 1);
+      const pad = new THREE.Mesh(new THREE.SphereGeometry(0.062, 12, 10), M.armour);
+      pad.scale.set(1.12, 0.95, 1.05);
       shoulder.add(pad);
 
-      const upper = limbSegment(0.26, 0.045, 0.04, M.suit);
+      const upper = limbSegment(0.26, 0.045, 0.04, M.under);
       shoulder.add(upper);
 
       const elbow = new THREE.Group();
@@ -217,7 +236,7 @@ export class Runner {
       const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(0.043, 10, 8), M.suitDark);
       elbow.add(elbowJoint);
 
-      const fore = limbSegment(0.24, 0.038, 0.032, M.suit);
+      const fore = limbSegment(0.24, 0.042, 0.036, M.armour);
       elbow.add(fore);
 
       const glove = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), M.dark);
@@ -230,121 +249,212 @@ export class Runner {
       cuff.position.y = -0.21;
       elbow.add(cuff);
 
-      this.shoulders.push({ side, shoulder, elbow });
+      // ------------------------------------------------ sidearm in the hand
+      // Built along the hand's -Y so it points forward the moment the arm is
+      // raised into the aiming pose.
+      const hand = new THREE.Group();
+      hand.position.y = -0.25;
+      elbow.add(hand);
+
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.15, 0.08), M.dark);
+      grip.position.y = -0.03;
+      hand.add(grip);
+
+      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.3, 0.125), M.weapon);
+      receiver.position.set(0, -0.17, -0.005);
+      hand.add(receiver);
+
+      // bright accent plate so the gun reads against the dark suit
+      const accentPlate = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.03), M.glowMid);
+      accentPlate.position.set(0, -0.16, -0.072);
+      hand.add(accentPlate);
+
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.038, 0.26, 10), M.weaponDark);
+      barrel.position.set(0, -0.4, -0.005);
+      hand.add(barrel);
+
+      const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.046, 0.014, 6, 14), M.trim);
+      muzzleRing.rotation.x = Math.PI / 2;
+      muzzleRing.position.set(0, -0.52, -0.005);
+      hand.add(muzzleRing);
+
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.08, 0.035), M.weaponDark);
+      sight.position.set(0, -0.17, -0.08);
+      hand.add(sight);
+
+      const muzzle = new THREE.Object3D();
+      muzzle.position.set(0, -0.55, -0.005);
+      hand.add(muzzle);
+
+      const flash = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowTexture('#fff3c0'),
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          opacity: 0,
+          fog: false,
+        })
+      );
+      flash.scale.setScalar(0.7);
+      flash.position.copy(muzzle.position);
+      hand.add(flash);
+
+      this.shoulders.push({ side, shoulder, elbow, hand, muzzle, flash });
     }
 
-    // -------------------------------------------------------- neck + head
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.05, 0.08, 10), M.skin);
-    neck.position.y = 0.46;
+    // -------------------------------------------------- helmet + camera rig
+    // The runner wears a sealed armoured helmet like the concept art: dark
+    // visor band, orange shell, small antenna and a status light.
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.058, 0.075, 10), M.under);
+    neck.position.y = 0.455;
     this.torso.add(neck);
 
     this.head = new THREE.Group();
-    this.head.position.y = 0.53;
+    this.head.position.y = 0.55;
     this.torso.add(this.head);
 
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.132, 20, 16), M.skin);
-    skull.scale.set(0.94, 1.04, 0.97);
-    this.head.add(skull);
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(0.132, 20, 16), M.armour);
+    shell.scale.set(0.98, 1.05, 1.02);
+    this.head.add(shell);
 
-    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), M.skin);
-    jaw.scale.set(0.86, 0.74, 0.92);
-    jaw.position.set(0, -0.056, -0.012);
-    this.head.add(jaw);
+    // dark band around the lower half of the helmet
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.126, 0.122, 0.13, 20), M.armourDark);
+    band.position.y = -0.045;
+    this.head.add(band);
 
-    // face
-    for (const side of [-1, 1]) {
-      const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.038, 12, 10), M.suitLight);
-      sclera.scale.set(1.0, 1.2, 0.45);
-      sclera.position.set(side * 0.05, 0.004, -0.107);
-      this.head.add(sclera);
+    // visor: recessed dark glass across the face, framed by an orange rim
+    const visorRim = new THREE.Mesh(new THREE.SphereGeometry(0.124, 18, 12, -0.9, 1.8, 0.6, 0.62), M.steel);
+    visorRim.rotation.y = Math.PI;
+    visorRim.position.z = -0.012;
+    this.head.add(visorRim);
 
-      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 10), M.eye);
-      iris.scale.set(1, 1.2, 0.5);
-      iris.position.set(side * 0.051, -0.002, -0.124);
-      this.head.add(iris);
-
-      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6), M.eyeGlint);
-      glint.position.set(side * 0.043, 0.016, -0.14);
-      this.head.add(glint);
-
-      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.009, 0.012), M.hair);
-      brow.position.set(side * 0.052, 0.055, -0.112);
-      brow.rotation.z = side * 0.16;
-      this.head.add(brow);
-    }
-
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), M.skin);
-    nose.position.set(0, -0.026, -0.128);
-    this.head.add(nose);
-
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.007, 0.01), M.mouth);
-    mouth.position.set(0, -0.06, -0.116);
-    this.head.add(mouth);
-
-    // goggles pushed up on the forehead
-    const visor = new THREE.Mesh(new THREE.TorusGeometry(0.112, 0.022, 8, 24), M.visor);
-    visor.position.set(0, 0.082, -0.01);
-    visor.rotation.x = Math.PI / 2.05;
+    this.visorMat = new THREE.MeshStandardMaterial({
+      color: 0x0a1420,
+      emissive: new THREE.Color(this.palette?.rail ?? 0x6fe6ff),
+      emissiveIntensity: 0.35,
+      roughness: 0.08,
+      metalness: 0.6,
+    });
+    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.121, 18, 12, -0.82, 1.64, 0.68, 0.5), this.visorMat);
+    visor.rotation.y = Math.PI;
+    visor.position.z = -0.016;
     this.head.add(visor);
 
-    // bob haircut: back mass + fringe + side locks
-    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.14, 20, 16), M.hair);
-    hair.position.set(0, 0.018, 0.026);
-    hair.scale.set(1.02, 1.02, 1.0);
-    this.head.add(hair);
-    const fringe = new THREE.Mesh(new THREE.SphereGeometry(0.134, 18, 12, 0, TAU, 0, Math.PI * 0.44), M.hair);
-    fringe.position.set(0, 0.036, -0.008);
-    fringe.scale.set(1.04, 1.06, 1.08);
-    this.head.add(fringe);
+    // glowing sensor slit in the visor
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.012, 0.01), M.trim);
+    slit.position.set(0, 0.012, -0.122);
+    this.head.add(slit);
+
+    // crest / camera pod
+    const crest = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.035, 0.11), M.armourDark);
+    crest.position.set(0, 0.05, -0.1);
+    this.head.add(crest);
+    const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 8), M.trim);
+    lens.rotation.x = Math.PI / 2;
+    lens.position.set(0, 0.05, -0.16);
+    this.head.add(lens);
+
+    // antenna
+    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.004, 0.14, 5), M.steel);
+    antenna.position.set(0.09, 0.11, 0.04);
+    antenna.rotation.z = 0.35;
+    this.head.add(antenna);
+    const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(0.013, 6, 5), M.trim);
+    antennaTip.position.set(0.112, 0.18, 0.04);
+    this.head.add(antennaTip);
+
+    // ear pods
     for (const side of [-1, 1]) {
-      const lock = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.14, 4, 8), M.hair);
-      lock.position.set(side * 0.116, -0.048, -0.012);
-      lock.rotation.z = side * 0.1;
-      lock.scale.set(0.85, 1, 0.7);
-      this.head.add(lock);
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10), M.armourDark);
+      pod.rotation.z = Math.PI / 2;
+      pod.position.set(side * 0.125, -0.01, 0.01);
+      this.head.add(pod);
     }
 
-    const tie = new THREE.Mesh(new THREE.TorusGeometry(0.038, 0.011, 6, 14), M.glowMid);
-    tie.position.set(0, 0.02, 0.125);
-    tie.rotation.x = 0.9;
-    this.head.add(tie);
+    // threat glow from the visor, sells her as the hero
+    this.visorGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glowTexture(`#${this.glowColor.getHexString()}`),
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        opacity: 0.3,
+      })
+    );
+    this.visorGlow.scale.setScalar(0.34);
+    this.visorGlow.position.set(0, 0.01, -0.13);
+    this.head.add(this.visorGlow);
 
-    // ponytail: seven segments on a light spring
     this.tail = [];
-    let parent = this.head;
-    for (let i = 0; i < 7; i++) {
-      const seg = new THREE.Group();
-      seg.position.set(0, i === 0 ? 0.03 : -0.088, i === 0 ? 0.118 : 0);
-      const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.046 - i * 0.0045, 0.08, 4, 8), M.hair);
-      mesh.position.y = -0.055;
-      seg.add(mesh);
-      parent.add(seg);
-      this.tail.push({ seg, sway: 0, swayVel: 0 });
-      parent = seg;
+
+    // ------------------------------------------------- back pack / thrusters
+    // Reads from the chase camera: a hard-edged box pack with two glowing
+    // exhausts, a status strip and a pair of gas canisters.
+    this.pack = new THREE.Group();
+    this.pack.position.set(0, 0.235, 0.15);
+    this.torso.add(this.pack);
+
+    const packShell = new THREE.Mesh(new THREE.BoxGeometry(0.215, 0.27, 0.11), M.pack);
+    this.pack.add(packShell);
+    const packLid = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.045, 0.12), M.armour);
+    packLid.position.y = 0.135;
+    this.pack.add(packLid);
+    const packBase = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.035, 0.12), M.weaponDark);
+    packBase.position.y = -0.135;
+    this.pack.add(packBase);
+    for (const side of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.05), M.weapon);
+      rail.position.set(side * 0.112, 0, 0.01);
+      this.pack.add(rail);
+      const canister = new THREE.Mesh(new THREE.CapsuleGeometry(0.034, 0.14, 4, 10), M.armourDark);
+      canister.position.set(side * 0.132, -0.02, 0.035);
+      this.pack.add(canister);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.02, 10), M.trim);
+      cap.position.set(side * 0.132, 0.09, 0.035);
+      this.pack.add(cap);
+    }
+    const packStrip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.012), M.glowMid);
+    packStrip.position.set(0, 0.05, 0.06);
+    this.pack.add(packStrip);
+
+    // twin exhaust nozzles under the pack, flaring on boost
+    this.thrusters = [];
+    for (const side of [-1, 1]) {
+      const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.05, 0.09, 10), M.weaponDark);
+      nozzle.position.set(side * 0.065, -0.165, 0.03);
+      this.pack.add(nozzle);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.042, 0.009, 5, 12), M.trim);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(side * 0.065, -0.205, 0.03);
+      this.pack.add(ring);
+      const flame = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowTexture('#9fe8ff'),
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          opacity: 0,
+        })
+      );
+      flame.scale.setScalar(0.22);
+      flame.position.set(side * 0.065, -0.24, 0.03);
+      this.pack.add(flame);
+      this.thrusters.push(flame);
     }
 
-    // ------------------------------------------------------- life support
-    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.3, 0.026), M.suitDark);
-    spine.position.set(0, 0.24, 0.15);
-    this.torso.add(spine);
-    const packCore = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.16, 0.016), M.glowSoft);
-    packCore.position.set(0, 0.25, 0.168);
-    this.torso.add(packCore);
-    const canister = new THREE.Mesh(new THREE.CapsuleGeometry(0.032, 0.14, 4, 8), M.boots);
-    canister.position.set(0.09, 0.22, 0.145);
-    this.torso.add(canister);
     this.packVent = new THREE.Sprite(
       new THREE.SpriteMaterial({
         map: glowTexture(`#${this.glowColor.getHexString()}`),
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
-        opacity: 0.5,
+        opacity: 0.16,
       })
     );
-    this.packVent.scale.setScalar(0.3);
-    this.packVent.position.set(0, 0.14, 0.165);
-    this.torso.add(this.packVent);
+    this.packVent.scale.setScalar(0.1);
+    this.packVent.position.set(0, 0.05, 0.062);
+    this.pack.add(this.packVent);
 
     // ------------------------------------------------------------- legs
     this.legs = [];
@@ -356,8 +466,13 @@ export class Runner {
       const hipJoint = new THREE.Mesh(new THREE.SphereGeometry(0.062, 12, 10), M.suitDark);
       hip.add(hipJoint);
 
-      const thigh = limbSegment(0.42, 0.058, 0.05, M.suit);
+      const thigh = limbSegment(0.42, 0.058, 0.05, M.under);
       hip.add(thigh);
+      // outer thigh plate
+      const thighPlate = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.26, 0.12), M.armour);
+      thighPlate.position.set(side * 0.045, -0.16, -0.005);
+      thighPlate.rotation.z = side * 0.08;
+      hip.add(thighPlate);
 
       const knee = new THREE.Group();
       knee.position.y = -0.42;
@@ -371,21 +486,28 @@ export class Runner {
       kneePad.position.set(0, 0.005, -0.022);
       knee.add(kneePad);
 
-      const shin = limbSegment(0.4, 0.045, 0.038, M.suit);
+      const shin = limbSegment(0.4, 0.045, 0.038, M.under);
       knee.add(shin);
+      // shin guard
+      const shinGuard = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.26, 0.09), M.armour);
+      shinGuard.position.set(0, -0.16, -0.028);
+      knee.add(shinGuard);
+      const shinGlow = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.16, 0.012), M.trim);
+      shinGlow.position.set(0, -0.16, -0.075);
+      knee.add(shinGlow);
 
       // magnetic boot: origin sits on the sole so it plants flat on the wall
       const boot = new THREE.Group();
       boot.position.y = -0.48;
       knee.add(boot);
 
-      const shell = new THREE.Mesh(new THREE.BoxGeometry(0.132, 0.16, 0.2), M.boots);
+      const shell = new THREE.Mesh(new THREE.BoxGeometry(0.132, 0.16, 0.2), M.armourDark);
       shell.position.set(0, 0.095, -0.015);
       boot.add(shell);
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.078, 0.1, 12), M.boots);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.078, 0.1, 12), M.armour);
       shaft.position.set(0, 0.19, 0.005);
       boot.add(shaft);
-      const toe = new THREE.Mesh(new THREE.SphereGeometry(0.072, 12, 10), M.boots);
+      const toe = new THREE.Mesh(new THREE.SphereGeometry(0.072, 12, 10), M.armour);
       toe.scale.set(0.92, 0.6, 1.2);
       toe.position.set(0, 0.052, -0.115);
       boot.add(toe);
@@ -425,7 +547,7 @@ export class Runner {
         opacity: 0.55,
       })
     );
-    this.wallGlow.scale.set(1.5, 1.5, 1);
+    this.wallGlow.scale.set(1.05, 0.72, 1);
     this.wallGlow.position.y = 0.04;
     this.root.add(this.wallGlow);
   }
@@ -510,6 +632,10 @@ export class Runner {
     this.accent.setHex(palette.tubeB);
     this.glowColor.setHex(palette.glow);
     this.mat.trim.color.copy(this.accent);
+    if (this.visorMat) {
+      const rail = palette.rail !== undefined ? palette.rail : 0x6fe6ff;
+      this.visorMat.emissive.setHex(rail);
+    }
     this.mat.trim.emissive.copy(this.accent);
     this.mat.bootSole.color.copy(this.glowColor);
     this.mat.bootSole.emissive.copy(this.glowColor);
@@ -533,6 +659,8 @@ export class Runner {
     this.turn = damp(this.turn, turn, 8, dt);
     this.boosting = !!params.boosting;
     const shield = params.shield ?? 0;
+    this.firing = !!params.firing;
+    this.aim = damp(this.aim, this.firing ? 1 : 0, 11, dt);
 
     const stride = 1.35 + speed * 0.155;
     this.runPhase += dt * stride * (this.boosting ? 1.35 : 1);
@@ -550,9 +678,18 @@ export class Runner {
 
     this.shoulders.forEach((arm, i) => {
       const ph = p + (i === 0 ? Math.PI : 0);
-      arm.shoulder.rotation.x = Math.sin(ph) * (0.4 + Math.min(0.2, speed * 0.004));
-      arm.shoulder.rotation.z = arm.side * (0.18 + Math.abs(this.turn) * 0.12);
-      arm.elbow.rotation.x = -0.6 - Math.max(0, Math.sin(ph)) * 0.45;
+      // running swing, overridden by the two-handed aim pose while firing
+      const swingX = Math.sin(ph) * (0.4 + Math.min(0.2, speed * 0.004));
+      arm.shoulder.rotation.x = lerp(swingX, AIM_SHOULDER, this.aim);
+      arm.shoulder.rotation.z = lerp(arm.side * (0.18 + Math.abs(this.turn) * 0.12), arm.side * 0.55, this.aim);
+      arm.elbow.rotation.x = lerp(-0.6 - Math.max(0, Math.sin(ph)) * 0.45, AIM_ELBOW, this.aim);
+      arm.hand.rotation.x = lerp(0, -0.16, this.aim);
+      arm.hand.rotation.z = lerp(0, -arm.side * 0.12, this.aim);
+      // muzzle flash pops for a moment after each shot
+      const fl = this.flashTimer[i] || 0;
+      arm.flash.material.opacity = fl > 0 ? Math.min(1, fl * 9) : 0;
+      arm.flash.scale.setScalar(0.24 + fl * 0.42);
+      if (fl > 0) this.flashTimer[i] = Math.max(0, fl - dt * 6);
     });
 
     // torso lean into the run and into turns
@@ -586,11 +723,17 @@ export class Runner {
       const hit = phase < 0.18;
       leg.magnetGlow.material.opacity = hit ? 1 : 0.35 + contact * 0.25;
       leg.magnetGlow.scale.setScalar(hit ? 0.95 : 0.55);
-      leg.sole.material.emissiveIntensity = hit ? 3.6 : 1.6;
+      leg.sole.material.emissiveIntensity = hit ? 2.3 : 1.1;
     });
-    this.wallGlow.material.opacity = 0.25 + contact * 0.25;
-    this.wallGlow.scale.setScalar(1.2 + Math.sin(this.time * 6) * 0.08 + contact * 0.3);
-    this.packVent.material.opacity = 0.25 + Math.sin(this.time * 8) * 0.12 + (this.boosting ? 0.35 : 0);
+    this.wallGlow.material.opacity = 0.09 + contact * 0.1;
+    this.wallGlow.scale.set(0.9 + contact * 0.22, 0.6 + contact * 0.14, 1);
+    this.packVent.material.opacity = 0.1 + Math.sin(this.time * 8) * 0.05 + (this.boosting ? 0.2 : 0);
+    this.thrusters.forEach((flame, i) => {
+      const flicker = 0.8 + Math.sin(this.time * 31 + i * 1.7) * 0.2;
+      const k = this.boosting ? 1 : 0.22;
+      flame.material.opacity = k * flicker;
+      flame.scale.setScalar((this.boosting ? 0.42 : 0.22) * flicker);
+    });
 
     // shield
     this.shieldStrength = clamp(damp(this.shieldStrength ?? 0, shield, 6, dt), 0, 1);
@@ -613,6 +756,17 @@ export class Runner {
       this.onFootstep(legIndex, this.getFootWorld(legIndex));
     }
     this.lastFootPhase = phaseMod;
+  }
+
+  /** Called by the weapon system: makes the muzzle flash and recoil. */
+  fire(index = 0) {
+    this.flashTimer[index] = 1;
+  }
+
+  /** World position of the muzzle of hand `index` (0 = left, 1 = right). */
+  getMuzzleWorld(index) {
+    this.root.updateMatrixWorld(true);
+    return this.shoulders[index].muzzle.getWorldPosition(new THREE.Vector3());
   }
 
   getFootWorld(index) {

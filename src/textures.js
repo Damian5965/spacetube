@@ -493,6 +493,87 @@ export function hazardStripeTexture() {
   });
 }
 
+/**
+ * Painted stencil decal sheet for the tube walls: a big sector number, a
+ * caution bar, an arrow and a couple of hazard chevrons, all on transparent
+ * paint that has been scuffed so it does not look like a clean UI sticker.
+ */
+export function decalTexture() {
+  return cached('decal:sector', () => {
+    const W = 512;
+    const H = 512;
+    const c = canvas(W, H);
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const paint = '#cfd6dc';
+
+    // big stencilled number
+    ctx.fillStyle = paint;
+    ctx.font = 'bold 230px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('07', W * 0.5, H * 0.42);
+
+    // stencil gaps cut out of the number
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect(W * 0.5 - 120, H * 0.42 - 90 + i * 55, 240, 8);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // caution bar with diagonal hatching
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(W * 0.14, H * 0.68, W * 0.72, H * 0.11);
+    ctx.clip();
+    ctx.fillStyle = '#d8a52a';
+    ctx.fillRect(W * 0.14, H * 0.68, W * 0.72, H * 0.11);
+    ctx.fillStyle = 'rgba(18,18,16,0.9)';
+    for (let x = 0; x < W; x += 46) {
+      ctx.beginPath();
+      ctx.moveTo(x, H * 0.79);
+      ctx.lineTo(x + 23, H * 0.68);
+      ctx.lineTo(x + 46, H * 0.68);
+      ctx.lineTo(x + 23, H * 0.79);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // arrow + small labels
+    ctx.fillStyle = paint;
+    ctx.beginPath();
+    ctx.moveTo(W * 0.5, H * 0.87);
+    ctx.lineTo(W * 0.62, H * 0.94);
+    ctx.lineTo(W * 0.38, H * 0.94);
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = 'bold 34px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('CARGO SPINE', W * 0.14, H * 0.16);
+    ctx.font = '26px monospace';
+    ctx.fillText('AUTHORISED PERSONNEL', W * 0.14, H * 0.22);
+
+    // scuff the paint off in patches so it reads as worn silk-screen
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 260; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const r = rand(2, 16);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(0,0,0,${rand(0.12, 0.55).toFixed(2)})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    const tex = finish(c);
+    return tex;
+  });
+}
+
 /** A worn metal plate used for debris and drones. */
 export function metalPlateTexture() {
   return cached('metalplate', () => {

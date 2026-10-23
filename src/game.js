@@ -86,6 +86,7 @@ export class Game {
     this.shield = 0;
     this.weaponLevel = 1;
     this.fireCooldown = 0;
+    this.altHand = 0;
     this.invuln = 0;
     this.combo = 0;
     this.comboTimer = 0;
@@ -534,13 +535,23 @@ export class Game {
     this.ui?.setFiring(firing);
     if (!firing || this.fireCooldown > 0) return;
     this.fireCooldown = this.weaponLevel >= 3 ? 0.115 : 0.14;
-    const r = RUNNER_CENTER_R - 0.15;
-    const bx = Math.cos(this.theta) * r;
-    const by = Math.sin(this.theta) * r;
-    this.bullets.firePlayer(this.traveled + 2.2, bx, by, this.weaponLevel);
+
+    // shots leave the guns in her hands, not her feet
+    const volleys = this.weaponLevel >= 3 ? 2 : 1;
+    for (let v = 0; v < volleys; v++) {
+      const hand = this.weaponLevel >= 3 || this.weaponLevel === 2 ? v : this.altHand;
+      const muzzle = this.runner.getMuzzleWorld(hand);
+      const a = this.traveled + 0.8;
+      const mx = muzzle.x - pathX(a);
+      const my = muzzle.y - pathY(a);
+      // a touch of inward drift so fire converges down the tube
+      const inward = 5.5;
+      this.bullets.firePlayer(a, mx, my, 1, -Math.cos(this.theta) * inward, -Math.sin(this.theta) * inward);
+      this.runner.fire(hand);
+      this.fx.sparks(muzzle, '#ffe9b0', 2, { speed: 2.2, size: 0.2, life: 0.16, spread: 0.06 });
+    }
+    this.altHand = this.altHand ? 0 : 1;
     this.audio.shoot(this.weaponLevel, clamp(this.thetaVel / MAX_ANGVEL, -0.7, 0.7));
-    _v.set(pathX(this.traveled + 2.0) + bx, pathY(this.traveled + 2.0) + by, -2.0);
-    this.fx.sparks(_v, '#9ffaff', 2, { speed: 2.4, size: 0.22, life: 0.18, spread: 0.08 });
   }
 
   onFootstep(index, pos) {
@@ -1070,32 +1081,38 @@ export class Game {
     this.camTheta = damp(this.camTheta, this.theta, follow, dt);
     const camTheta = this.camTheta;
 
-    const back = 3.15 + this.boostVisual * 0.5;
+    // Over-the-shoulder chase cam: sits above her head (toward the axis) and a
+    // few metres back, so the wall reads as a floor and the corridor opens up
+    // ahead instead of pointing up at her boots.
+    const back = 3.05 + this.boostVisual * 0.35;
     const camA = this.traveled - back;
-    const camRadius = TUBE_RADIUS - 1.15;
+    // well above her helmet: the wall under her boots reads as a floor and we
+    // look down over her shoulder instead of up at her heels
+    const camRadius = TUBE_RADIUS - 2.8 - this.boostVisual * 0.12;
     const shake = this.engine.shake;
+    // a small lateral offset puts her on the left third of the screen
+    const shoulder = 0.42;
     cam.position.set(
-      pathX(camA) + Math.cos(camTheta) * camRadius + shake.x * 0.5,
-      pathY(camA) + Math.sin(camTheta) * camRadius + shake.y * 0.5,
+      pathX(camA) + Math.cos(camTheta) * camRadius - Math.sin(camTheta) * shoulder + shake.x * 0.4,
+      pathY(camA) + Math.sin(camTheta) * camRadius + Math.cos(camTheta) * shoulder + shake.y * 0.4,
       back
     );
     // up is toward the axis: the wall stays under her boots
     cam.up.set(-Math.cos(camTheta), -Math.sin(camTheta), 0);
 
-    // look a little past her, down the tunnel, at roughly her wall height.
-    // the aim angle is mostly the (lagging) camera angle so she stays centred,
-    // with a hint of her real angle so turns still read as motion
-    const aimTheta = camTheta + angleDelta(this.theta, camTheta) * 0.2;
-    const lookA = this.traveled + 9;
-    const lookR = TUBE_RADIUS - 2.6;
+    // aim down the tunnel, a little below the camera height and a touch past
+    // her, with the aim angle mostly lagged so she stays centred
+    const aimTheta = camTheta + angleDelta(this.theta, camTheta) * 0.25;
+    const lookA = this.traveled + 2.4;
+    const lookR = TUBE_RADIUS - 1.2;
     cam.lookAt(
-      pathX(lookA) + Math.cos(aimTheta) * lookR,
-      pathY(lookA) + Math.sin(aimTheta) * lookR,
-      -9
+      pathX(lookA) + Math.cos(aimTheta) * lookR + shake.x * 0.2,
+      pathY(lookA) + Math.sin(aimTheta) * lookR + shake.y * 0.2,
+      -1.2
     );
     cam.rotateZ(shake.roll + Math.sin(this.time * 0.33) * 0.006);
 
-    const targetFov = 62 + this.boostVisual * 10;
+    const targetFov = 67 + this.boostVisual * 8;
     if (Math.abs(cam.fov - targetFov) > 0.02) {
       cam.fov = damp(cam.fov, targetFov, 4, dt);
       cam.updateProjectionMatrix();
@@ -1131,6 +1148,7 @@ export class Game {
       boosting: this.boosting,
       shield: this.shield,
       airborne: this.airLift > 0.2,
+      firing: this.input.fire && this.state === 'playing',
     });
 
     // jump trail
