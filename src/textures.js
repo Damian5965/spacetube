@@ -296,6 +296,233 @@ export function smokeTexture() {
   });
 }
 
+// ---------------------------------------------------------------- v2: metal
+/** Derive a tangent-space normal map from a grayscale-ish canvas. */
+function normalFromCanvas(src, strength = 3) {
+  const w = src.width;
+  const h = src.height;
+  const data = src.getContext('2d').getImageData(0, 0, w, h).data;
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    lum[i] = (data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114) / 255;
+  }
+  const out = canvas(w, h);
+  const octx = out.getContext('2d');
+  const img = octx.createImageData(w, h);
+  const at = (x, y) => lum[((y + h) % h) * w + ((x + w) % w)];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      let nx = -dx;
+      let ny = -dy;
+      let nz = 1;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nx /= len;
+      ny /= len;
+      nz /= len;
+      const i = (y * w + x) * 4;
+      img.data[i] = (nx * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(out);
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/**
+ * Corrugated industrial wall of the transit tube: brushed steel ribs running
+ * along the tunnel, panel seams, bolts, grime and a little rust.
+ */
+export function hullTextures() {
+  return cached('hull:v2', () => {
+    const W = 512;
+    const H = 512;
+    const c = canvas(W, H);
+    const ctx = c.getContext('2d');
+
+    // base steel
+    const base = ctx.createLinearGradient(0, 0, 0, H);
+    base.addColorStop(0, '#6f747b');
+    base.addColorStop(0.5, '#7b8087');
+    base.addColorStop(1, '#656a72');
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, W, H);
+
+    // long corrugation ribs (they run along the tube axis)
+    const ribs = 32;
+    for (let i = 0; i < ribs; i++) {
+      const x = (i / ribs) * W;
+      const w = W / ribs;
+      const g = ctx.createLinearGradient(x, 0, x + w, 0);
+      g.addColorStop(0, 'rgba(0,0,0,0.42)');
+      g.addColorStop(0.18, 'rgba(255,255,255,0.20)');
+      g.addColorStop(0.4, 'rgba(255,255,255,0.06)');
+      g.addColorStop(0.72, 'rgba(0,0,0,0.16)');
+      g.addColorStop(1, 'rgba(0,0,0,0.46)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, 0, w, H);
+    }
+
+    // panel seams across the tube
+    ctx.strokeStyle = 'rgba(16,18,20,0.85)';
+    ctx.lineWidth = 3;
+    for (const y of [0, H * 0.5]) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 1.5);
+      ctx.lineTo(W, y + 1.5);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(200,205,210,0.16)';
+    ctx.lineWidth = 1.5;
+    for (const y of [0, H * 0.5]) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + 4);
+      ctx.lineTo(W, y + 4);
+      ctx.stroke();
+    }
+
+    // bolts along the seams
+    for (let i = 0; i < ribs; i += 2) {
+      const x = (i / ribs) * W + W / ribs / 2;
+      for (const y of [6, H * 0.5 + 6, H - 8]) {
+        ctx.fillStyle = 'rgba(30,32,35,0.9)';
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(220,225,230,0.35)';
+        ctx.beginPath();
+        ctx.arc(x - 1, y - 1, 1.4, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    // grime: dark blotches and streaks
+    for (let i = 0; i < 90; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const r = rand(8, 46);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(24,26,22,${rand(0.05, 0.16).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(24,26,22,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    // rust runs
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const w = rand(2, 7);
+      const h = rand(18, 90);
+      const g = ctx.createLinearGradient(x, y, x, y + h);
+      g.addColorStop(0, 'rgba(126,66,28,0.34)');
+      g.addColorStop(1, 'rgba(126,66,28,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, w, h);
+    }
+    // scratches
+    ctx.strokeStyle = 'rgba(226,232,236,0.10)';
+    for (let i = 0; i < 40; i++) {
+      ctx.lineWidth = rand(0.6, 1.6);
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + rand(-24, 24), y + rand(10, 90));
+      ctx.stroke();
+    }
+
+    const map = finish(c, { repeat: true });
+    map.anisotropy = 8;
+
+    const normalMap = normalFromCanvas(c, 2.2);
+
+    // roughness: painted metal is fairly rough, grime even rougher
+    const rc = canvas(W, H);
+    const rctx = rc.getContext('2d');
+    rctx.drawImage(c, 0, 0);
+    rctx.globalCompositeOperation = 'saturation';
+    rctx.fillStyle = 'rgba(120,120,120,1)';
+    rctx.fillRect(0, 0, W, H);
+    rctx.globalCompositeOperation = 'source-over';
+    rctx.fillStyle = 'rgba(90,90,90,0.45)';
+    rctx.fillRect(0, 0, W, H);
+    const roughnessMap = finish(rc, { repeat: true, srgb: false });
+
+    return { map, normalMap, roughnessMap };
+  });
+}
+
+/** Diagonal yellow/black hazard band. */
+export function hazardStripeTexture() {
+  return cached('hazard:stripes', () => {
+    const W = 256;
+    const H = 128;
+    const c = canvas(W, H);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#0d0e0f';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#e8b32a';
+    const step = 36;
+    ctx.save();
+    for (let x = -H; x < W + H; x += step * 2) {
+      ctx.beginPath();
+      ctx.moveTo(x, H);
+      ctx.lineTo(x + H, 0);
+      ctx.lineTo(x + H + step, 0);
+      ctx.lineTo(x + step, H);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    // wear
+    for (let i = 0; i < 160; i++) {
+      ctx.fillStyle = `rgba(20,20,18,${rand(0.05, 0.4).toFixed(2)})`;
+      ctx.fillRect(Math.random() * W, Math.random() * H, rand(1, 5), rand(1, 5));
+    }
+    const tex = finish(c, { repeat: true });
+    tex.repeat.set(3, 1);
+    return tex;
+  });
+}
+
+/** A worn metal plate used for debris and drones. */
+export function metalPlateTexture() {
+  return cached('metalplate', () => {
+    const W = 256;
+    const c = canvas(W, W);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#4c5057';
+    ctx.fillRect(0, 0, W, W);
+    for (let i = 0; i < 240; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * W;
+      const r = rand(2, 18);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const tone = Math.random() < 0.5 ? '255,255,255' : '12,14,16';
+      g.addColorStop(0, `rgba(${tone},${rand(0.03, 0.14).toFixed(2)})`);
+      g.addColorStop(1, `rgba(${tone},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    ctx.strokeStyle = 'rgba(18,20,22,0.6)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * W;
+      ctx.strokeRect(x, y, rand(20, 70), rand(20, 70));
+    }
+    return finish(c, { repeat: true });
+  });
+}
+
 export function disposeTextures() {
   cache.forEach((t) => t.dispose());
   cache.clear();

@@ -380,44 +380,93 @@ export class Drone {
     this.cooldown = rand(0.8, 2.0);
     this.group = new THREE.Group();
 
-    const body = new THREE.Mesh(new THREE.OctahedronGeometry(0.78, 0), shared.droneBodyMat);
-    body.scale.set(1.1, 0.8, 1.55);
+    // --- spider drone ----------------------------------------------------
+    const shellMat = shared.droneBodyMat;
+    const limbMat = shared.droneTrimMat;
+
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), shellMat);
+    body.scale.set(1.0, 0.78, 1.25);
     this.group.add(body);
+    this.body = body;
 
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.09, 6, 24), shared.droneTrimMat);
-    collar.rotation.x = Math.PI / 2;
-    collar.scale.set(1, 1.2, 1);
-    this.group.add(collar);
+    // armoured cap on top, gives the crab-like hump from the concept art
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 8, 0, TAU, 0, Math.PI * 0.55), shellMat);
+    cap.scale.set(1.02, 0.72, 1.2);
+    cap.position.y = 0.14;
+    this.group.add(cap);
 
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(1.15, 0.03, 4, 40, Math.PI * 1.25),
-      shared.mineGlowMat
-    );
-    ring.rotation.x = 0.6;
-    this.group.add(ring);
-    this.ring = ring;
+    // glowing seam where the shell splits
+    const seam = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.028, 4, 28), shared.mineGlowMat);
+    seam.rotation.x = Math.PI / 2;
+    seam.scale.set(1.02, 1.22, 1);
+    seam.position.z = 0.06;
+    this.group.add(seam);
+    this.ring = seam;
 
-    for (const sx of [-1, 1]) {
-      const pod = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.85, 6), shared.droneTrimMat);
-      pod.rotation.z = sx * Math.PI / 2.2;
-      pod.position.set(sx * 0.86, -0.1, 0.15);
-      this.group.add(pod);
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 5), shared.redLampMat);
-      tip.position.set(sx * 1.2, -0.1, 0.15);
-      this.group.add(tip);
+    // four curved claws, two per side
+    this.legs = [];
+    for (const side of [-1, 1]) {
+      for (const row of [-1, 1]) {
+        const leg = new THREE.Group();
+        leg.position.set(side * 0.4, -0.06, row * 0.28);
+        leg.rotation.z = side * -0.35;
+        leg.rotation.y = side * row * 0.22;
+        this.group.add(leg);
+
+        const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.5, 4, 7), limbMat);
+        upper.rotation.z = side * Math.PI * 0.42;
+        upper.position.set(side * 0.26, -0.1, 0);
+        leg.add(upper);
+
+        const joint = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), shellMat);
+        joint.position.set(side * 0.52, -0.16, 0);
+        leg.add(joint);
+
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(0.062, 0.55, 5), limbMat);
+        claw.position.set(side * 0.7, -0.42, 0);
+        claw.rotation.z = side * 0.35;
+        leg.add(claw);
+
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), shared.redLampMat);
+        tip.position.set(side * 0.78, -0.68, 0);
+        leg.add(tip);
+
+        this.legs.push({ leg, side, row, phase: rand(0, TAU) });
+      }
     }
 
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.23, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff466a }));
-    core.position.z = -0.74;
-    this.group.add(core);
-    this.core = core;
+    // the eye: a recessed red lens with a hot core, like the concept art
+    const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.16, 14), shellMat);
+    socket.rotation.x = Math.PI / 2;
+    socket.position.z = -0.66;
+    this.group.add(socket);
+
+    const lens = new THREE.Mesh(new THREE.SphereGeometry(0.235, 16, 12), new THREE.MeshBasicMaterial({ color: 0xff2418 }));
+    lens.position.z = -0.72;
+    this.group.add(lens);
+    this.core = lens;
 
     this.eyeMat = shared.droneEyeMat.clone();
     const eye = new THREE.Sprite(this.eyeMat);
-    eye.scale.setScalar(1.55);
-    eye.position.z = -0.85;
+    eye.scale.setScalar(1.9);
+    eye.position.z = -0.8;
     this.group.add(eye);
     this.eye = eye;
+
+    // under-glow so it reads against a dark wall
+    const under = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glowTexture('#ff3a20'),
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        opacity: 0.5,
+      })
+    );
+    under.scale.setScalar(2.2);
+    under.position.set(0, -0.1, -0.3);
+    this.group.add(under);
+    this.underGlow = under;
 
     const exhaust = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -461,20 +510,26 @@ export class Drone {
       -(game.ship.a - this.a) * 0.2
     );
     this.group.rotation.z = Math.sin(t * 2 + this.phase) * 0.16;
-    this.ring.rotation.z += dt * 2.2;
-    this.core.scale.setScalar(1 + Math.sin(t * 8) * 0.15);
+    this.ring.rotation.z += dt * 0.6;
+    this.core.scale.setScalar(1 + Math.sin(t * 8) * 0.12);
+    // claws flex as it hovers
+    this.legs.forEach((l, i) => {
+      l.leg.rotation.x = Math.sin(t * 2.4 + l.phase) * 0.16;
+      l.leg.rotation.z = l.side * (-0.35 + Math.sin(t * 1.7 + i) * 0.1);
+    });
+    if (this.underGlow) this.underGlow.material.opacity = 0.35 + Math.sin(t * 3.6 + this.phase) * 0.15;
 
     const ahead = this.a - game.traveled;
     const inRange = ahead > 8 && ahead < 190;
     if (!inRange) {
       this.eyeMat.opacity = 0.35;
-      this.eye.scale.setScalar(1.2);
+      this.eye.scale.setScalar(1.4);
       return;
     }
 
     if (this.charge > 0) {
       this.charge -= dt;
-      this.eye.scale.setScalar(1.6 + (0.9 - this.charge) * 2.4);
+      this.eye.scale.setScalar(2.0 + (0.9 - this.charge) * 2.8);
       this.eyeMat.opacity = 1;
       this.eyeMat.color.setHex(0xffffff);
       if (this.charge <= 0) {
@@ -486,7 +541,7 @@ export class Drone {
     }
 
     this.cooldown -= dt;
-    this.eye.scale.setScalar(1.35 + Math.sin(t * 5 + this.phase) * 0.15);
+    this.eye.scale.setScalar(1.7 + Math.sin(t * 5 + this.phase) * 0.18);
     this.eyeMat.opacity = 0.65 + Math.sin(t * 3 + this.phase) * 0.2;
     if (this.cooldown <= 0) {
       this.charge = 0.85;

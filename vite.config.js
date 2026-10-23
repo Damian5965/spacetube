@@ -4,6 +4,9 @@ import { defineConfig } from 'vite';
 // the repository name as base and writes straight into docs/. Local dev,
 // preview and the default build stay at the site root.
 const pages = process.env.GITHUB_PAGES === 'true';
+// Optional sub-folder for the Pages build: PAGES_SUBDIR=v2 → docs/v2/
+const subdir = process.env.PAGES_SUBDIR || '';
+const outDir = pages ? (subdir ? `docs/${subdir}` : 'docs') : 'dist';
 
 export default defineConfig({
   // relative base: the bundle works at any host/sub-path (GitHub Pages project
@@ -23,7 +26,7 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
-    outDir: pages ? 'docs' : 'dist',
+    outDir,
     emptyOutDir: true,
   },
 });

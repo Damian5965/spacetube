@@ -101,29 +101,29 @@ export class Engine {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.95;
+    this.renderer.toneMappingExposure = 1.02;
     this.renderer.setClearColor(0x030211, 1);
     this.renderer.info.autoReset = true;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x030217);
-    this.scene.fog = new THREE.FogExp2(0x030217, 0.0042);
+    this.scene.fog = new THREE.FogExp2(0x030217, 0.011);
 
     // soft IBL so the metal of ships and debris reads well
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const envScene = new RoomEnvironment();
     this.scene.environment = pmrem.fromScene(envScene, 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
+    this.scene.environmentIntensity = 0.6;
     pmrem.dispose();
 
     // lights: cool key from above, warm rim from behind so metal reads
-    this.keyLight = new THREE.DirectionalLight(0xcfe9ff, 2.6);
+    this.keyLight = new THREE.DirectionalLight(0xffe6c0, 2.1);
     this.keyLight.position.set(6, 9, 7);
     this.scene.add(this.keyLight);
-    this.rimLight = new THREE.DirectionalLight(0xff6bd8, 2.2);
+    this.rimLight = new THREE.DirectionalLight(0xff6a3a, 1.5);
     this.rimLight.position.set(-7, -3, -8);
     this.scene.add(this.rimLight);
-    this.fillLight = new THREE.DirectionalLight(0x6b8cff, 1.1);
+    this.fillLight = new THREE.DirectionalLight(0x8fa6c8, 0.8);
     this.fillLight.position.set(-4, 5, -2);
     this.scene.add(this.fillLight);
 
@@ -236,7 +236,16 @@ export class Engine {
   setPalette(palette) {
     if (!palette) return;
     this.scene.background.setHex(palette.bg);
-    if (this.scene.fog) this.scene.fog.color.setHex(palette.bg);
+    if (this.scene.fog) {
+      this.scene.fog.color.setHex(palette.fog ?? palette.bg);
+      if (palette.fogDensity && this.scene.fog.density !== undefined) {
+        this.scene.fog.density = palette.fogDensity;
+      }
+    }
+    // industrial lighting rig: warm key, red-orange rim, cold fill
+    if (this.keyLight) this.keyLight.color.setHex(palette.lamp ?? 0xffe6c0);
+    if (this.rimLight) this.rimLight.color.setHex(0xff6a3a);
+    if (this.fillLight) this.fillLight.color.setHex(0x8fa6c8);
   }
 
   update(dt) {

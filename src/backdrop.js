@@ -21,6 +21,9 @@ export class Backdrop {
     this.planetGroup = this.makePlanet(palette);
     this.group.add(this.planetGroup);
 
+    this.fleet = this.makeFleet(palette);
+    this.group.add(this.fleet);
+
     this.dust = this.makeDust(palette);
     scene.add(this.dust.points);
 
@@ -208,6 +211,94 @@ export class Backdrop {
     return { points, geo, mat, count: COUNT, palette };
   }
 
+  // ------------------------------------------------------------ cargo fleet
+  /** Distant haulers and station hulks drifting outside the tube. */
+  makeFleet(palette) {
+    const fleet = new THREE.Group();
+    const hullMat = new THREE.MeshStandardMaterial({
+      color: 0x4a4d55,
+      metalness: 0.75,
+      roughness: 0.62,
+      flatShading: true,
+    });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x22242b, metalness: 0.6, roughness: 0.7, flatShading: true });
+    const windowMat = new THREE.MeshBasicMaterial({ color: 0xffc47a });
+    const lampMat = new THREE.MeshBasicMaterial({ color: 0xff5030 });
+
+    const makeShip = (scale, seed) => {
+      const g = new THREE.Group();
+      const rnd = (a, b) => a + ((Math.sin(seed * 12.9898 + a * 78.233) * 43758.5453) % 1 + 1) * 0.5 * (b - a);
+      // spine
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.5, 9), hullMat);
+      g.add(spine);
+      // container blocks
+      const blocks = 4 + Math.round(rnd(0, 3));
+      for (let i = 0; i < blocks; i++) {
+        const w = rnd(1.0, 2.4);
+        const h = rnd(1.0, 2.2);
+        const d = rnd(1.2, 3.2);
+        const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), i % 2 ? hullMat : darkMat);
+        box.position.set(rnd(-2.2, 2.2), rnd(-1.6, 1.6), rnd(-4.2, 4.2));
+        box.rotation.set(rnd(-0.1, 0.1), rnd(-0.2, 0.2), rnd(-0.1, 0.1));
+        g.add(box);
+      }
+      // bridge tower with lit windows
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.3, 1.8), hullMat);
+      tower.position.set(0, 1.3, -3.4);
+      g.add(tower);
+      for (let i = 0; i < 6; i++) {
+        const win = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.06), windowMat);
+        win.position.set(-0.6 + i * 0.24, 1.42, -4.32);
+        g.add(win);
+      }
+      // engine bells
+      for (const x of [-0.6, 0.6]) {
+        const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.62, 1.1, 8), darkMat);
+        bell.rotation.x = Math.PI / 2;
+        bell.position.set(x, 0, 5.1);
+        g.add(bell);
+      }
+      const blink = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 5), lampMat);
+      blink.position.set(0, 2.05, -3.4);
+      g.add(blink);
+      g.scale.setScalar(scale);
+      return g;
+    };
+
+    // close enough to be seen through the tube windows
+    const spots = [
+      [-46, 12, -58, 1.5],
+      [40, -16, -88, 1.9],
+      [-26, -22, -34, 1.1],
+      [58, 26, -120, 2.3],
+      [-74, 6, -150, 2.6],
+      [18, 34, -46, 1.2],
+      [-58, -30, -186, 3.0],
+      [96, -8, -210, 3.2],
+    ];
+    spots.forEach(([x, y, z, sc], i) => {
+      const ship = makeShip(sc, i + 1);
+      ship.position.set(x, y, z);
+      ship.rotation.set((i % 3) * 0.06, i * 0.9, (i % 2 ? 1 : -1) * 0.12);
+      fleet.add(ship);
+    });
+
+    // slow tumble of a few loose containers
+    this.debris = [];
+    for (let i = 0; i < 8; i++) {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(rand(0.8, 2.4), rand(0.8, 2), rand(1.2, 3)), darkMat);
+      const a = rand(0, Math.PI * 2);
+      const r = rand(18, 70);
+      box.position.set(Math.cos(a) * r, Math.sin(a) * r * 0.7, rand(-240, -30));
+      box.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+      fleet.add(box);
+      this.debris.push({ mesh: box, spin: rand(-0.12, 0.12) });
+    }
+    fleet.userData.blink = lampMat;
+    void palette;
+    return fleet;
+  }
+
   setSector(palette) {
     this.nebulas[0].material.map = nebulaTexture([palette.nebula[0], palette.nebula[1]], 1);
     this.nebulas[1].material.map = nebulaTexture([palette.nebula[2], palette.nebula[1]], 2);
@@ -228,6 +319,17 @@ export class Backdrop {
     this.nebulas.forEach((n, i) => {
       n.material.rotation += dt * (0.004 + i * 0.002);
     });
+
+    if (this.debris) {
+      for (const d of this.debris) {
+        d.mesh.rotation.y += dt * d.spin;
+        d.mesh.rotation.x += dt * d.spin * 0.4;
+      }
+    }
+    if (this.fleet?.userData.blink) {
+      const blink = 0.5 + 0.5 * Math.sin(this.rotation * 40);
+      this.fleet.userData.blink.color.setRGB(1, 0.25 + blink * 0.2, 0.15);
+    }
 
     const pg = this.planetGroup;
     pg.userData.body.rotation.y += dt * 0.008;

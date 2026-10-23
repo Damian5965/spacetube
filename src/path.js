@@ -1,7 +1,7 @@
 // The transit tube centreline + sector palettes.
 // IMPORTANT: keep PATH_GLSL in sync with pathX / pathY.
 
-export const TUBE_RADIUS = 10;
+export const TUBE_RADIUS = 5.4;
 export const PLAY_X = 6.9;
 export const PLAY_Y = 4.8;
 
@@ -31,15 +31,15 @@ export function angleDelta(a, b) {
   return d;
 }
 
-const AX1 = 3.4;
+const AX1 = 1.25;
 const AF1 = 0.0155;
-const AX2 = 4.6;
+const AX2 = 1.7;
 const AF2 = 0.0063;
 const AP2 = 1.2;
-const AY1 = 2.6;
+const AY1 = 1.0;
 const BF1 = 0.0127;
 const BP1 = 0.5;
-const AY2 = 1.9;
+const AY2 = 0.75;
 const BF2 = 0.0073;
 const BP2 = 2.2;
 
@@ -79,58 +79,83 @@ export const PATH_GLSL = /* glsl */ `
 
 export const SECTORS = [
   {
-    key: 'ion',
-    name: 'ION THREAD',
-    bg: 0x030217,
-    tubeA: 0x0a1d5c,
-    tubeB: 0x27c8ff,
-    accentCss: '#6ef3ff',
-    glow: '#3bd6ff',
-    nebula: ['#2b1a6e', '#0a4a66', '#ff2f9a'],
-    planet: 'violet',
-  },
-  {
-    key: 'rift',
-    name: 'MAGENTA RIFT',
-    bg: 0x0b0216,
-    tubeA: 0x4a0a4c,
-    tubeB: 0xff3fbf,
-    accentCss: '#ff7ade',
-    glow: '#ff45d4',
-    nebula: ['#6b1a5e', '#2a0b47', '#ff7a3d'],
+    key: 'cargo',
+    name: 'CARGO SPINE',
+    bg: 0x07080a,
+    fog: 0x2a2a18,
+    fogDensity: 0.013,
+    tubeA: 0x6a6f70,
+    tubeB: 0xffc46a,
+    lamp: 0xffd79a,
+    haze: '#ffd06a',
+    hazard: 0xffb32a,
+    accentCss: '#ffc46a',
+    glow: '#ffb545',
+    nebula: ['#4a3a12', '#101410', '#ff9a3d'],
     planet: 'ember',
   },
   {
-    key: 'coil',
-    name: 'EMERALD COIL',
-    bg: 0x01100d,
-    tubeA: 0x053a2e,
-    tubeB: 0x63ffb8,
-    accentCss: '#9dffcf',
-    glow: '#4dffb0',
-    nebula: ['#0c5e46', '#062638', '#d4ff5e'],
+    key: 'foundry',
+    name: 'FOUNDRY LINE',
+    bg: 0x0a0605,
+    fog: 0x341410,
+    fogDensity: 0.014,
+    tubeA: 0x7a5a4e,
+    tubeB: 0xff7a4a,
+    lamp: 0xffb183,
+    haze: '#ff8a4a',
+    hazard: 0xff5a2a,
+    accentCss: '#ff8f5e',
+    glow: '#ff6a3d',
+    nebula: ['#6b2a10', '#170a0b', '#ffb36a'],
+    planet: 'ember',
+  },
+  {
+    key: 'coolant',
+    name: 'COOLANT RING',
+    bg: 0x04090a,
+    fog: 0x14282a,
+    fogDensity: 0.013,
+    tubeA: 0x5e767a,
+    tubeB: 0x8ff0d2,
+    lamp: 0xc8fff0,
+    haze: '#7dffd6',
+    hazard: 0x5de0b0,
+    accentCss: '#8ff0d2',
+    glow: '#5affc8',
+    nebula: ['#0c4a46', '#06131a', '#a8ff9a'],
     planet: 'teal',
   },
   {
-    key: 'flare',
-    name: 'SOLAR FLARE',
-    bg: 0x120601,
-    tubeA: 0x5e1b05,
-    tubeB: 0xffb03d,
-    accentCss: '#ffd28a',
-    glow: '#ffa53d',
-    nebula: ['#8a3410', '#3d0f08', '#ffd05e'],
+    key: 'reactor',
+    name: 'REACTOR DECK',
+    bg: 0x090604,
+    fog: 0x2c2108,
+    fogDensity: 0.012,
+    tubeA: 0x7c7458,
+    tubeB: 0xffe08a,
+    lamp: 0xfff4c8,
+    haze: '#fff0a0',
+    hazard: 0xffd93a,
+    accentCss: '#ffe08a',
+    glow: '#ffcf5a',
+    nebula: ['#5a4412', '#141007', '#ffd86a'],
     planet: 'ember',
   },
   {
-    key: 'void',
-    name: 'VOID BLOOM',
-    bg: 0x08031a,
-    tubeA: 0x331a66,
-    tubeB: 0xd9c8ff,
-    accentCss: '#e2d4ff',
-    glow: '#b18cff',
-    nebula: ['#4a2a8f', '#8f2a6e', '#d9c8ff'],
+    key: 'deep',
+    name: 'DEEP SHAFT',
+    bg: 0x050408,
+    fog: 0x1a1826,
+    fogDensity: 0.015,
+    tubeA: 0x5a5a6e,
+    tubeB: 0x9fb4ff,
+    lamp: 0xd8e0ff,
+    haze: '#9fb4ff',
+    hazard: 0x8fa4ff,
+    accentCss: '#9fb4ff',
+    glow: '#8fa4ff',
+    nebula: ['#1a2050', '#08060f', '#b0c0ff'],
     planet: 'violet',
   },
 ];

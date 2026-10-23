@@ -5,4 +5,4 @@ dist
 .vite
 .tmpcheck
 shots
-*.mjs
+/*.mjs

@@ -274,23 +274,23 @@ export class FX {
     const n = Math.round(28 * scale * this.quality);
     this.particles.burst(pos, color, n, {
       speed: 11 * scale,
-      size: 0.9 * scale,
+      size: 0.62 * scale,
       life: 0.9,
       spread: 0.7 * scale,
       drag: 1.2,
     });
     this.particles.burst(pos, '#ffffff', Math.round(10 * scale * this.quality), {
       speed: 6 * scale,
-      size: 1.4 * scale,
+      size: 0.95 * scale,
       life: 0.35,
       spread: 0.4,
       drag: 2.4,
     });
-    this.shockwaves.spawn(pos, color, 10 * scale, 0.55);
-    this.shockwaves.spawn(pos, '#ffffff', 5 * scale, 0.3);
+    this.shockwaves.spawn(pos, color, 6 * scale, 0.5);
+    this.shockwaves.spawn(pos, '#ffffff', 3 * scale, 0.28);
     this.flash.position.copy(pos);
     this.flash.color.set(color);
-    this.flash.intensity = Math.min(60, 18 * scale);
+    this.flash.intensity = Math.min(40, 12 * scale);
     this.flashDecay = 1.4;
   }
 
@@ -302,7 +302,7 @@ export class FX {
       spread: 0.3,
       drag: 1.8,
     });
-    this.shockwaves.spawn(pos, color, big ? 5 : 2.6, 0.38);
+    this.shockwaves.spawn(pos, color, big ? 3.2 : 1.7, 0.34);
   }
 
   hitSpark(pos, color = '#ffcf8a') {

@@ -12,7 +12,7 @@ import {
   pathY,
   angleDelta,
 } from './path.js';
-import { Tunnel } from './tunnel.js';
+import { Hull } from './hull.js';
 import { Backdrop } from './backdrop.js';
 import { FX } from './fx.js';
 import { Bullets } from './projectiles.js';
@@ -46,7 +46,7 @@ export class Game {
     this.ui = ui;
 
     this.palette = sectorFor(1);
-    this.tunnel = new Tunnel(scene, this.palette);
+    this.tunnel = new Hull(scene, this.palette);
     this.backdrop = new Backdrop(scene, this.palette);
     this.fx = new FX(scene, camera);
     this.bullets = new Bullets(scene, this.fx);
@@ -1045,7 +1045,10 @@ export class Game {
   placeEntities() {
     const T = this.traveled;
     for (const h of this.hazards) {
-      if (h.group) h.group.position.set(pathX(h.a), pathY(h.a), -(h.a - T));
+      if (!h.group) continue;
+      // arcs are already built in tube space; everything else carries a lateral offset
+      if (h.thetaStart !== undefined) h.group.position.set(pathX(h.a), pathY(h.a), -(h.a - T));
+      else h.group.position.set(pathX(h.a) + h.x, pathY(h.a) + h.y, -(h.a - T));
     }
     for (const p of this.pickups) {
       p.group.position.set(pathX(p.a) + p.x, pathY(p.a) + p.y, -(p.a - T));
@@ -1067,9 +1070,9 @@ export class Game {
     this.camTheta = damp(this.camTheta, this.theta, follow, dt);
     const camTheta = this.camTheta;
 
-    const back = 4.1 + this.boostVisual * 0.6;
+    const back = 3.15 + this.boostVisual * 0.5;
     const camA = this.traveled - back;
-    const camRadius = TUBE_RADIUS - 1.35;
+    const camRadius = TUBE_RADIUS - 1.15;
     const shake = this.engine.shake;
     cam.position.set(
       pathX(camA) + Math.cos(camTheta) * camRadius + shake.x * 0.5,
@@ -1092,7 +1095,7 @@ export class Game {
     );
     cam.rotateZ(shake.roll + Math.sin(this.time * 0.33) * 0.006);
 
-    const targetFov = 72 + this.boostVisual * 12;
+    const targetFov = 62 + this.boostVisual * 10;
     if (Math.abs(cam.fov - targetFov) > 0.02) {
       cam.fov = damp(cam.fov, targetFov, 4, dt);
       cam.updateProjectionMatrix();

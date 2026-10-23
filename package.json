@@ -3,14 +3,15 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "SpaceTube \u2014 a neon hyperspace tunnel runner built with Three.js",
+  "description": "SpaceTube — a neon hyperspace tunnel runner built with Three.js",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "start": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "build:pages": "GITHUB_PAGES=true vite build && node -e \"fs.writeFileSync('docs/.nojekyll','')\"",
-    "preview:static": "node server.js"
+    "build:pages": "node scripts/build-pages.mjs",
+    "preview:static": "node server.js",
+    "build:pages:v1": "GITHUB_PAGES=true vite build && node -e \"require('fs').writeFileSync('docs/.nojekyll','')\""
   },
   "dependencies": {
     "three": "^0.186.1"
