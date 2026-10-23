@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#05040d" />
+    <meta name="description" content="SpaceTube — a neon hyperspace tunnel runner. Dodge, blast and overdrive your way through the deep-space transit tube." />
+    <title>SPACETUBE // hyperspace runner</title>
+    <style>html,body{color:#e8f6ff;background:#04030b;margin:0}#render{background:#04030b;display:block;position:fixed;top:0;bottom:0;left:0;right:0}</style>
+    <script type="module" crossorigin src="./assets/index-2OC6r0oz.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CliSQjnw.css">
+  </head>
+  <body>
+    <canvas id="render" aria-label="SpaceTube game viewport"></canvas>
+
+    <!-- ambient screen FX -->
+    <div class="fx fx-scanlines" aria-hidden="true"></div>
+    <div class="fx fx-vignette" aria-hidden="true"></div>
+    <div class="fx fx-grain" aria-hidden="true"></div>
+    <div id="flash" class="fx fx-flash" aria-hidden="true"></div>
+    <div id="damage" class="fx fx-damage" aria-hidden="true"></div>
+    <div id="warp" class="fx fx-warp" aria-hidden="true"></div>
+
+    <!-- ============ HUD ============ -->
+    <div id="hud" class="hidden" aria-live="off">
+      <header class="hud-top">
+        <div class="hud-block brand">
+          <div class="brand-mark">
+            <span class="brand-dot"></span>
+            <span class="brand-name">SPACE<span class="dim">//</span>TUBE</span>
+          </div>
+          <div class="brand-sub"><span id="hud-sector">SECTOR 01</span> · <span id="hud-zone">ION THREAD</span></div>
+        </div>
+
+        <div class="hud-block progress-block">
+          <div class="progress-labels">
+            <span id="hud-level-label">SECTOR 01 — ION THREAD</span>
+            <span id="hud-level-target">RUN 0.0 KM</span>
+          </div>
+          <div class="progress-track">
+            <div id="level-fill" class="progress-fill"></div>
+            <div class="progress-ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+        </div>
+
+        <div class="hud-block stats-block">
+          <div class="stat-mini"><span class="k">DIST</span><span id="hud-distance" class="v">0 m</span></div>
+          <div class="stat-mini"><span class="k">SPEED</span><span id="hud-speed" class="v">0 km/h</span></div>
+          <div class="stat-mini"><span class="k">BEST</span><span id="hud-best" class="v">0</span></div>
+        </div>
+      </header>
+
+      <div class="boss-wrap hidden" id="boss-hud">
+        <div class="boss-head">
+          <span id="boss-name">WARDEN</span>
+          <span id="boss-hp-text">100%</span>
+        </div>
+        <div class="boss-track"><div id="boss-fill" class="boss-fill"></div><div class="boss-glow"></div></div>
+        <div class="boss-sub">TARGET LOCKED — HOLD FIRE</div>
+      </div>
+
+      <div class="score-cluster">
+        <div id="hud-score" class="score-value">0</div>
+        <div class="score-meta">
+          <span id="hud-mult" class="mult">×1.0</span>
+          <span class="score-cap">SCORE</span>
+        </div>
+      </div>
+
+      <div id="announce" class="announce">
+        <div class="announce-kicker" id="announce-kicker">SECTOR 01</div>
+        <div class="announce-title" id="announce-title">ION THREAD</div>
+        <div class="announce-sub" id="announce-sub">reach the gate</div>
+      </div>
+
+      <div id="popups" class="popups" aria-hidden="true"></div>
+
+      <div class="hud-bottom">
+        <div class="systems">
+          <div class="system">
+            <div class="sys-head"><span class="sys-icon hull-ico">◈</span><span class="sys-name">SUIT</span><span id="hull-num" class="sys-num">100</span></div>
+            <div class="sys-track"><div id="hull-fill" class="sys-fill hull"></div></div>
+          </div>
+          <div class="system">
+            <div class="sys-head"><span class="sys-icon shield-ico">⬡</span><span class="sys-name">SHIELD</span><span id="shield-num" class="sys-num">0</span></div>
+            <div class="sys-track"><div id="shield-fill" class="sys-fill shield"></div></div>
+          </div>
+          <div class="system">
+            <div class="sys-head"><span class="sys-icon boost-ico">⟁</span><span class="sys-name">OVERDRIVE</span><span id="boost-num" class="sys-num">100</span></div>
+            <div class="sys-track"><div id="boost-fill" class="sys-fill boost"></div></div>
+          </div>
+        </div>
+
+        <div class="hud-right">
+          <div id="weapon-chip" class="chip">
+            <span class="chip-k">WEAPON</span>
+            <span class="chip-v" id="weapon-name">PLASMA I</span>
+            <div class="pips"><i class="on"></i><i></i><i></i></div>
+          </div>
+          <div id="combo-chip" class="chip combo hidden">
+            <span class="chip-k">COMBO</span>
+            <span class="chip-v" id="combo-count">×2</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="reticle" class="reticle"><span></span><span></span><span></span><span></span><i></i></div>
+    </div>
+
+    <!-- ============ BOOT / LOADER ============ -->
+    <section id="boot" class="screen boot">
+      <div class="boot-inner">
+        <div class="boot-logo">SPACE<span class="slash">//</span>TUBE</div>
+        <div class="boot-tag">deep-space transit protocol</div>
+        <div class="boot-track"><div id="boot-bar" class="boot-bar"></div></div>
+        <div class="boot-row"><span id="boot-status">initializing warp core…</span><span id="boot-pct">0%</span></div>
+        <button id="boot-start" class="btn btn-ghost boot-enter hidden">ENTER THE TUBE</button>
+        <div class="boot-tip" id="boot-tip">TIP // a magnet leap clears a full ring of arcs</div>
+      </div>
+      <div class="boot-corner tl"></div><div class="boot-corner tr"></div>
+      <div class="boot-corner bl"></div><div class="boot-corner br"></div>
+    </section>
+
+    <!-- ============ MAIN MENU ============ -->
+    <section id="menu" class="screen menu hidden">
+      <div class="menu-left">
+        <div class="menu-kicker"><span class="pulse-dot"></span> LIVE FEED · DEEP SPACE RELAY 7</div>
+        <h1 class="logo">
+          <span class="logo-line logo-main">SPACE<span class="slash">//</span>TUBE</span>
+          <span class="logo-line logo-sub">HYPERSPACE RUNNER</span>
+        </h1>
+        <p class="menu-blurb">
+          Magnetic boots, one collapsing transit tube, no brakes. Run the whole
+          inside of the wall — floor, walls, ceiling — leap the live arcs and blast
+          the drones. Every gate is another sector deeper.
+        </p>
+
+        <div class="menu-actions">
+          <button id="btn-start" class="btn btn-primary">
+            <span class="btn-glint"></span>
+            <span class="btn-label">START RUN</span>
+            <span class="btn-sub">ENTER</span>
+          </button>
+          <button id="btn-how" class="btn btn-ghost">HOW TO RUN</button>
+          <button id="btn-leader" class="btn btn-ghost">RECORDS</button>
+        </div>
+
+        <div class="menu-meta">
+          <div class="record-block">
+            <div class="record-k">PERSONAL BEST</div>
+            <div class="record-v" id="menu-best">0</div>
+            <div class="record-s" id="menu-best-sub">no runs logged</div>
+          </div>
+          <div class="menu-controls-hint">
+            <div><kbd>A</kbd><kbd>D</kbd> / <kbd>◀▶</kbd> run around the tube</div>
+            <div><kbd>W</kbd> magnet leap · <kbd>SPACE</kbd> fire · <kbd>SHIFT</kbd> boost</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="menu-right">
+        <div class="panel">
+          <div class="panel-title">SUIT CONFIG</div>
+          <label class="setting">
+            <span class="setting-k">Graphics</span>
+            <select id="sel-quality">
+              <option value="high">Ultra</option>
+              <option value="medium" selected>High</option>
+              <option value="low">Performance</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span class="setting-k">Master volume</span>
+            <input id="rng-volume" type="range" min="0" max="100" value="70" />
+          </label>
+          <label class="setting">
+            <span class="setting-k">Screen shake</span>
+            <input id="chk-shake" type="checkbox" checked class="switch" />
+          </label>
+          <label class="setting">
+            <span class="setting-k">Reduced flashes</span>
+            <input id="chk-flash" type="checkbox" class="switch" />
+          </label>
+          <div class="panel-foot">Best run · <span id="menu-best-2">0</span> pts</div>
+        </div>
+        <div class="panel panel-transmission">
+          <div class="panel-title">INCOMING TRANSMISSION</div>
+          <p id="transmission-text">“Runner, the tube is collapsing. Your boots hold the wall, nothing else does. Keep the suit above zero and keep moving.”</p>
+          <div class="tx-sign">— CONTROL, RELAY 7</div>
+        </div>
+      </aside>
+
+      <div class="menu-foot">
+        <span>BUILD 1.0 · THREE.JS</span>
+        <span class="menu-foot-mid">© ORBITAL TRANSIT AUTHORITY</span>
+        <span>SOUND ON RECOMMENDED</span>
+      </div>
+    </section>
+
+    <!-- ============ HOW TO FLY ============ -->
+    <section id="how" class="screen modal-screen hidden">
+      <div class="modal">
+        <div class="modal-head">
+          <h2>RUNNER MANUAL</h2>
+          <button class="icon-btn" data-close="how">✕</button>
+        </div>
+        <div class="manual-grid">
+          <div class="manual-card">
+            <div class="manual-ico">⇄</div>
+            <h3>RUN THE WALL</h3>
+            <p>Your mag-boots stick to the tube wall. <kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> run all the way around the circumference — floor, sides, ceiling. Mouse or touch stick steers too.</p>
+          </div>
+          <div class="manual-card">
+            <div class="manual-ico">✦</div>
+            <h3>MAGNET LEAP</h3>
+            <p><kbd>W</kbd> / <kbd>↑</kbd> cuts the magnets and launches you off the wall for half a second — the only way over a full ring of live arcs. You land back on the tube automatically.</p>
+          </div>
+          <div class="manual-card">
+            <div class="manual-ico">⟁</div>
+            <h3>FIRE &amp; OVERDRIVE</h3>
+            <p><kbd>SPACE</kbd> or <kbd>CLICK</kbd> holds full auto forward. <kbd>SHIFT</kbd> drains overdrive for raw speed and doubled score. Near-misses, combos and cells recharge it.</p>
+          </div>
+          <div class="manual-card">
+            <div class="manual-ico">⬡</div>
+            <h3>SURVIVE</h3>
+            <p>Arc barriers and drones cost suit integrity. <b class="c-lime">REPAIR</b> cells restore it, <b class="c-magenta">SHIELD</b> absorbs one hit, <b class="c-amber">QUANTUM</b> slows time. Run through the gate to change sector.</p>
+          </div>
+          <div class="manual-card">
+            <div class="manual-ico">☠</div>
+            <h3>DRONES &amp; WARDENS</h3>
+            <p>A red glow means a drone is charging. Destroy it before it fires. At the end of a sector a <b class="c-red">WARDEN</b> guards the gate — break its armour, then run the gap.</p>
+          </div>
+          <div class="manual-card">
+            <div class="manual-ico">⚡</div>
+            <h3>COMBOS</h3>
+            <p>Chain kills, wall-slips and pickups without taking a hit to grow the multiplier up to ×8. Taking damage resets the chain. Bank it before the next arc field.</p>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span><kbd>P</kbd> pause · <kbd>M</kbd> mute · <kbd>R</kbd> retry</span>
+          <button class="btn btn-primary btn-sm" data-close="how">UNDERSTOOD</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RECORDS ============ -->
+    <section id="leader" class="screen modal-screen hidden">
+      <div class="modal modal-narrow">
+        <div class="modal-head">
+          <h2>RUN RECORDS</h2>
+          <button class="icon-btn" data-close="leader">✕</button>
+        </div>
+        <div class="records">
+          <div class="records-head"><span>#</span><span>SCORE</span><span>SECTOR</span><span>DISTANCE</span></div>
+          <div id="records-list" class="records-list"></div>
+        </div>
+        <div class="modal-foot">
+          <span>Local archive · saved on this device</span>
+          <button class="btn btn-ghost btn-sm" id="btn-clear-records">CLEAR</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PAUSE ============ -->
+    <section id="pause" class="screen modal-screen hidden">
+      <div class="modal modal-narrow pause-modal">
+        <div class="modal-head">
+          <h2>PAUSED</h2>
+          <span class="pause-sector" id="pause-sector">SECTOR 01</span>
+        </div>
+        <div class="pause-stats">
+          <div><span>SCORE</span><b id="pause-score">0</b></div>
+          <div><span>DISTANCE</span><b id="pause-dist">0 m</b></div>
+          <div><span>BEST</span><b id="pause-best">0</b></div>
+        </div>
+        <div class="pause-actions">
+          <button id="btn-resume" class="btn btn-primary">RESUME <span class="btn-sub">P</span></button>
+          <button id="btn-restart" class="btn btn-ghost">RESTART RUN <span class="btn-sub">R</span></button>
+          <button id="btn-quit" class="btn btn-ghost">ABANDON RUN</button>
+        </div>
+        <div class="pause-settings">
+          <div class="setting setting-stack">
+            <span class="setting-k">Master volume</span>
+            <input id="rng-volume-pause" type="range" min="0" max="100" value="70" />
+          </div>
+          <div class="setting setting-stack">
+            <span class="setting-k">Graphics</span>
+            <select id="sel-quality-pause">
+              <option value="high">Ultra</option>
+              <option value="medium" selected>High</option>
+              <option value="low">Performance</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ GAME OVER ============ -->
+    <section id="gameover" class="screen modal-screen hidden">
+      <div class="modal gameover-modal">
+        <div class="go-head">
+          <div class="go-kicker" id="go-kicker">RUN TERMINATED</div>
+          <h2 id="go-title">SUIT BREACH</h2>
+          <div id="go-record" class="go-record hidden">◆ NEW PERSONAL BEST ◆</div>
+        </div>
+        <div class="go-score">
+          <span class="go-score-k">FINAL SCORE</span>
+          <span id="go-score" class="go-score-v">0</span>
+        </div>
+        <div class="go-grid">
+          <div><span>SECTOR</span><b id="go-sector">01</b></div>
+          <div><span>DISTANCE</span><b id="go-distance">0 m</b></div>
+          <div><span>BEST MULT</span><b id="go-mult">×1.0</b></div>
+          <div><span>NEAR MISSES</span><b id="go-nearmiss">0</b></div>
+          <div><span>DRONES DOWN</span><b id="go-drones">0</b></div>
+          <div><span>BEST SCORE</span><b id="go-best">0</b></div>
+        </div>
+        <div class="go-actions">
+          <button id="btn-retry" class="btn btn-primary">RUN AGAIN <span class="btn-sub">R</span></button>
+          <button id="btn-menu" class="btn btn-ghost">MAIN MENU</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TOUCH ============ -->
+    <div id="touch" class="touch hidden">
+      <div id="stick" class="stick"><div class="stick-nub" id="stick-nub"></div></div>
+      <div class="touch-right">
+        <button id="touch-leap" class="touch-btn leap">LEAP</button>
+        <button id="touch-boost" class="touch-btn boost">BOOST</button>
+        <button id="touch-fire" class="touch-btn fire">FIRE</button>
+      </div>
+    </div>
+
+    <div id="rotate-hint" class="rotate-hint hidden">↻ rotate your device for a wider tube</div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <noscript>
+      <div class="fallback">
+        <h1>SPACE<span class="slash">//</span>TUBE</h1>
+        <p>This game needs JavaScript and WebGL. Enable JavaScript, then reload the page.</p>
+      </div>
+    </noscript>
+
+    <div id="fatal" class="fallback hidden">
+      <h1>SPACE<span class="slash">//</span>TUBE</h1>
+      <p id="fatal-message">WebGL could not start on this device.</p>
+      <p class="fallback-sub">Try a recent Chrome, Edge, Firefox or Safari, enable hardware acceleration, then reload.</p>
+      <button class="btn btn-primary" onclick="location.reload()">RELOAD</button>
+    </div>
+
+    <script>
+      // If the module bundle never executes (blocked script, stale cache),
+      // surface a readable error instead of a half-styled page.
+      document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+          if (window.__stAppReady) return;
+          var status = document.getElementById('boot-status');
+          if (status) status.textContent = 'script stalled — hard reload (Ctrl+Shift+R)';
+          document.getElementById('fatal')?.classList.remove('hidden');
+        }, 12000);
+      });
+    </script>
+
+  </body>
+</html>

@@ -1,0 +1,10 @@
+/* Stylesheet entry — linked directly from index.html so the UI is styled even
+   if the JS bundle is slow or fails to load. Vite fingerprints this in builds. */
+@import '@fontsource/orbitron/500.css';
+@import '@fontsource/orbitron/700.css';
+@import '@fontsource/orbitron/900.css';
+@import '@fontsource/rajdhani/400.css';
+@import '@fontsource/rajdhani/600.css';
+@import '@fontsource/rajdhani/700.css';
+@import './style.css';
+@import './fallback.css';

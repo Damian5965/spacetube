@@ -1,0 +1,36 @@
+/* Shown when WebGL/JS is missing — keeps the failure state on-brand. */
+.fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px;
+  text-align: center;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(40, 20, 90, 0.35), transparent 65%),
+    #04030b;
+  font-family: var(--font-ui, 'Rajdhani', 'Segoe UI', sans-serif);
+  color: #e8f6ff;
+}
+.fallback h1 {
+  margin: 0;
+  font-family: var(--font-display, 'Orbitron', 'Segoe UI', sans-serif);
+  font-size: clamp(28px, 6vw, 54px);
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 0 28px rgba(110, 243, 255, 0.5);
+}
+.fallback h1 .slash { color: #ff45d4; }
+.fallback p {
+  margin: 0;
+  max-width: 520px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #a9bed6;
+}
+.fallback .fallback-sub { font-size: 12.5px; color: #8196b8; }
+.fallback .btn { margin-top: 12px; }
